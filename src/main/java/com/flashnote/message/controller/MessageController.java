@@ -1,0 +1,43 @@
+package com.flashnote.message.controller;
+
+import com.flashnote.common.response.ApiResponse;
+import com.flashnote.message.dto.MessageListRequest;
+import com.flashnote.message.entity.Message;
+import com.flashnote.message.service.MessageService;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/messages")
+public class MessageController {
+    private final MessageService messageService;
+
+    public MessageController(MessageService messageService) {
+        this.messageService = messageService;
+    }
+
+    @PostMapping("/list")
+    public ApiResponse<List<Message>> list(Authentication authentication,
+                                          @RequestBody(required = false) MessageListRequest request) {
+        Long flashNoteId = request == null ? null : request.getFlashNoteId();
+        return ApiResponse.success(messageService.listMessages(authentication.getName(), flashNoteId));
+    }
+
+    @PostMapping
+    public ApiResponse<Message> send(Authentication authentication, @RequestBody Message message) {
+        return ApiResponse.success(messageService.sendMessage(authentication.getName(), message));
+    }
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(Authentication authentication) {
+        return messageService.subscribe(authentication.getName());
+    }
+}
