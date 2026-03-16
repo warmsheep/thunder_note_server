@@ -1,17 +1,15 @@
 package com.flashnote.common.response;
 
-import java.time.Instant;
-
 public class ApiResponse<T> {
     private int code;
     private String message;
     private T data;
-    private Instant timestamp;
+    private long timestamp;
 
     public ApiResponse() {
     }
 
-    public ApiResponse(int code, String message, T data, Instant timestamp) {
+    public ApiResponse(int code, String message, T data, long timestamp) {
         this.code = code;
         this.message = message;
         this.data = data;
@@ -19,19 +17,19 @@ public class ApiResponse<T> {
     }
 
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(ErrorCode.SUCCESS.getCode(), ErrorCode.SUCCESS.getMessage(), data, Instant.now());
+        return new ApiResponse<>(ErrorCode.SUCCESS.getCode(), ErrorCode.SUCCESS.getMessage(), data, System.currentTimeMillis());
     }
 
     public static <T> ApiResponse<T> success(String message, T data) {
-        return new ApiResponse<>(ErrorCode.SUCCESS.getCode(), message, data, Instant.now());
+        return new ApiResponse<>(ErrorCode.SUCCESS.getCode(), message, data, System.currentTimeMillis());
     }
 
     public static <T> ApiResponse<T> error(ErrorCode errorCode) {
-        return new ApiResponse<>(errorCode.getCode(), errorCode.getMessage(), null, Instant.now());
+        return new ApiResponse<>(errorCode.getCode(), errorCode.getMessage(), null, System.currentTimeMillis());
     }
 
     public static <T> ApiResponse<T> error(int code, String message) {
-        return new ApiResponse<>(code, message, null, Instant.now());
+        return new ApiResponse<>(code, message, null, System.currentTimeMillis());
     }
 
     public int getCode() {
@@ -58,11 +56,11 @@ public class ApiResponse<T> {
         this.data = data;
     }
 
-    public Instant getTimestamp() {
+    public long getTimestamp() {
         return timestamp;
     }
 
-    public void setTimestamp(Instant timestamp) {
+    public void setTimestamp(long timestamp) {
         this.timestamp = timestamp;
     }
 }
