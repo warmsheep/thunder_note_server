@@ -104,4 +104,25 @@ public class MessageServiceImpl implements MessageService {
         }
         return user.getId();
     }
+
+    @Override
+    public void deleteMessage(String username, Long messageId) {
+        Long userId = getRequiredUserId(username);
+        
+        // 查询消息是否存在且属于当前用户
+        Message message = messageMapper.selectById(messageId);
+        if (message == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Message not found");
+        }
+        
+        // 检查是否是发送者或接收者
+        boolean isOwner = message.getSenderId() != null && message.getSenderId().equals(userId);
+        boolean isReceiver = message.getReceiverId() != null && message.getReceiverId().equals(userId);
+        
+        if (!isOwner && !isReceiver) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "You can only delete your own messages");
+        }
+        
+        messageMapper.deleteById(messageId);
+    }
 }

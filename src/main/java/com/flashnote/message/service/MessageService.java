@@ -11,4 +11,6 @@ public interface MessageService {
     Message sendMessage(String username, Message message);
 
     SseEmitter subscribe(String username);
+
+    void deleteMessage(String username, Long messageId);
 }

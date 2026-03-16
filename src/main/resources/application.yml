@@ -5,7 +5,7 @@ spring:
   application:
     name: thunder-note-server
   datasource:
-    url: jdbc:postgresql://localhost:5432/thunder_note
+    url: jdbc:postgresql://localhost:15432/thunder_note
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
