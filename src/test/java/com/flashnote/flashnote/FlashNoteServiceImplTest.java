@@ -88,6 +88,7 @@ class FlashNoteServiceImplTest {
 
         FlashNote inputNote = new FlashNote();
         inputNote.setTitle("New Note");
+        inputNote.setIcon("💡");
         inputNote.setContent("New Content");
         inputNote.setTags("tag1,tag2");
 
@@ -99,6 +100,7 @@ class FlashNoteServiceImplTest {
         // Then
         assertEquals(1L, result.getUserId());
         assertEquals("New Note", result.getTitle());
+        assertEquals("💡", result.getIcon());
         assertEquals("New Content", result.getContent());
         assertEquals("tag1,tag2", result.getTags());
         assertFalse(result.getDeleted());
@@ -115,6 +117,7 @@ class FlashNoteServiceImplTest {
         existingNote.setId(1L);
         existingNote.setUserId(1L);
         existingNote.setTitle("Old Title");
+        existingNote.setIcon("📝");
         existingNote.setContent("Old Content");
         existingNote.setTags("old");
         existingNote.setDeleted(false);
@@ -123,6 +126,7 @@ class FlashNoteServiceImplTest {
 
         FlashNote updateData = new FlashNote();
         updateData.setTitle("Updated Title");
+        updateData.setIcon("📚");
         updateData.setContent("Updated Content");
         updateData.setTags("updated");
 
@@ -133,6 +137,7 @@ class FlashNoteServiceImplTest {
 
         // Then
         assertEquals("Updated Title", result.getTitle());
+        assertEquals("📚", result.getIcon());
         assertEquals("Updated Content", result.getContent());
         assertEquals("updated", result.getTags());
         verify(flashNoteMapper).updateById(existingNote);

@@ -53,6 +53,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
 
         note.setTitle(incoming.getTitle());
+        note.setIcon(incoming.getIcon());
         note.setContent(incoming.getContent());
         note.setTags(incoming.getTags());
         flashNoteMapper.updateById(note);

@@ -13,6 +13,7 @@ public class FlashNote {
     private Long id;
     private Long userId;
     private String title;
+    private String icon;
     private String content;
     private String tags;
     @TableField("is_deleted")
@@ -46,6 +47,14 @@ public class FlashNote {
 
     public String getContent() {
         return content;
+    }
+
+    public String getIcon() {
+        return icon;
+    }
+
+    public void setIcon(String icon) {
+        this.icon = icon;
     }
 
     public void setContent(String content) {
