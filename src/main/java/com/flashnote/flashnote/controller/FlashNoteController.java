@@ -1,6 +1,8 @@
 package com.flashnote.flashnote.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.flashnote.dto.FlashNoteSearchRequest;
+import com.flashnote.flashnote.dto.FlashNoteSearchResult;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.service.FlashNoteService;
 import org.springframework.security.core.Authentication;
@@ -26,6 +28,13 @@ public class FlashNoteController {
     @PostMapping("/list")
     public ApiResponse<List<FlashNote>> list(Authentication authentication) {
         return ApiResponse.success(flashNoteService.listNotes(authentication.getName()));
+    }
+
+    @PostMapping("/search")
+    public ApiResponse<List<FlashNoteSearchResult>> search(Authentication authentication,
+                                                           @RequestBody FlashNoteSearchRequest request) {
+        String query = request == null ? null : request.getQuery();
+        return ApiResponse.success(flashNoteService.searchNotes(authentication.getName(), query));
     }
 
     @PostMapping
