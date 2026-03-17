@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flashnote.auth.dto.LoginRequest;
 import com.flashnote.auth.dto.LoginResponse;
 import com.flashnote.auth.dto.RegisterRequest;
+import com.flashnote.auth.dto.ChangePasswordRequest;
 import com.flashnote.auth.dto.UserInfo;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
@@ -127,6 +128,20 @@ public class AuthServiceImpl implements AuthService {
         if (userId != null) {
             redisUtil.delete(buildRefreshTokenKey(userId));
         }
+    }
+
+    @Override
+    public void changePassword(String username, ChangePasswordRequest request) {
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getUsername, username));
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
+        }
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Current password is incorrect");
+        }
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userMapper.updateById(user);
     }
 
     private String buildRefreshTokenKey(Long userId) {
