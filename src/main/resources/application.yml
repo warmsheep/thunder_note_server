@@ -52,3 +52,9 @@ logging:
   level:
     root: info
     com.flashnote: debug
+  file:
+    name: logs/thunder-note.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
