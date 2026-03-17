@@ -97,6 +97,7 @@ public class FavoriteServiceImpl implements FavoriteService {
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
             if (flashNote != null && userId.equals(flashNote.getUserId())) {
                 item.setFlashNoteTitle(flashNote.getTitle());
+                item.setFlashNoteIcon(flashNote.getIcon());
             }
         }
         return item;

@@ -7,6 +7,7 @@ public class FavoriteMessageItem {
     private Long messageId;
     private Long flashNoteId;
     private String flashNoteTitle;
+    private String flashNoteIcon;
     private String role;
     private String content;
     private LocalDateTime messageCreatedAt;
@@ -42,6 +43,14 @@ public class FavoriteMessageItem {
 
     public void setFlashNoteTitle(String flashNoteTitle) {
         this.flashNoteTitle = flashNoteTitle;
+    }
+
+    public String getFlashNoteIcon() {
+        return flashNoteIcon;
+    }
+
+    public void setFlashNoteIcon(String flashNoteIcon) {
+        this.flashNoteIcon = flashNoteIcon;
     }
 
     public String getRole() {
