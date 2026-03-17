@@ -46,7 +46,7 @@ public class MessageServiceImpl implements MessageService {
             queryWrapper.eq(Message::getFlashNoteId, flashNoteId);
         }
 
-        int actualLimit = (limit != null && limit > 0) ? limit : 30;
+        int actualLimit = (limit != null && limit > 0) ? limit : 20;
         int actualPage = (page != null && page > 0) ? page : 1;
         int offset = (actualPage - 1) * actualLimit;
 
