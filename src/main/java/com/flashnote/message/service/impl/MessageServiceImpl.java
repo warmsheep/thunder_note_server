@@ -65,6 +65,21 @@ public class MessageServiceImpl implements MessageService {
             }
         }
         message.setReadStatus(false);
+        // 设置默认 content，避免媒体消息时 content 为 null 违反 NOT NULL 约束
+        if (message.getContent() == null || message.getContent().isBlank()) {
+            String mediaType = message.getMediaType();
+            if (mediaType != null) {
+                switch (mediaType) {
+                    case "IMAGE": message.setContent("[图片]"); break;
+                    case "VIDEO": message.setContent("[视频]"); break;
+                    case "VOICE": message.setContent("[语音]"); break;
+                    case "FILE": message.setContent("[文件]"); break;
+                    default: message.setContent(""); break;
+                }
+            } else {
+                message.setContent("");
+            }
+        }
         messageMapper.insert(message);
 
         SseEmitter receiverEmitter = emitterMap.get(message.getReceiverId());
