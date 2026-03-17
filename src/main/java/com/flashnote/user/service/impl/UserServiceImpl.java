@@ -31,6 +31,7 @@ public class UserServiceImpl implements UserService {
             profile.setUserId(user.getId());
             profileMapperInsert(profile);
         }
+        profile.setAvatar(user.getAvatar());
         return profile;
     }
 
