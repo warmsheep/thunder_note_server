@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.Collections;
+import java.util.stream.Collectors;
 
 @Service
 public class FlashNoteServiceImpl implements FlashNoteService {
@@ -99,9 +101,13 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                     List<MatchedMessageInfo> matchedMessageInfos = null;
                     if (noteMessages != null && !noteMessages.isEmpty()) {
                         matchedMessageInfos = noteMessages.stream()
-                                .map(msg -> new MatchedMessageInfo(
-                                        msg.getId(),
-                                        generateSnippet(msg.getContent(), normalized)))
+                                .map(msg -> {
+                                    MatchedMessageInfo info = new MatchedMessageInfo(
+                                            msg.getId(),
+                                            generateSnippet(msg.getContent(), normalized));
+                                    info.setContextMessages(getMessageContext(note.getId(), msg.getId()));
+                                    return info;
+                                })
                                 .collect(Collectors.toList());
                     }
                     return new FlashNoteSearchResult(note, matchedMessageInfos);
@@ -143,6 +149,31 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
 
         return snippet.toString();
+    }
+
+    private List<Message> getMessageContext(Long flashNoteId, Long messageId) {
+        // 查前3条: id < messageId, orderByDesc, limit 3, 然后reverse
+        List<Message> before = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, flashNoteId)
+                .lt(Message::getId, messageId)
+                .orderByDesc(Message::getId)
+                .last("LIMIT 3"));
+        Collections.reverse(before);
+
+        // 查自身
+        Message self = messageMapper.selectById(messageId);
+
+        // 查后3条: id > messageId, orderByAsc, limit 3
+        List<Message> after = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, flashNoteId)
+                .gt(Message::getId, messageId)
+                .orderByAsc(Message::getId)
+                .last("LIMIT 3"));
+
+        List<Message> context = new ArrayList<>(before);
+        if (self != null) context.add(self);
+        context.addAll(after);
+        return context;
     }
 
     @Override
