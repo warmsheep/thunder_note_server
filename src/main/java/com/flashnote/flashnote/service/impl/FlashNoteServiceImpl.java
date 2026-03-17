@@ -217,6 +217,9 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
         note.setDeleted(true);
         flashNoteMapper.updateById(note);
+
+        messageMapper.delete(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, noteId));
     }
 
     private Long getRequiredUserId(String username) {
