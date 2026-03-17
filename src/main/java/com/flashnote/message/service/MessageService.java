@@ -13,4 +13,6 @@ public interface MessageService {
     SseEmitter subscribe(String username);
 
     void deleteMessage(String username, Long messageId);
+
+    Long countMessages(String username);
 }

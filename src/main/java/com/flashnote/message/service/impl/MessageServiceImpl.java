@@ -149,4 +149,14 @@ public class MessageServiceImpl implements MessageService {
         
         messageMapper.deleteById(messageId);
     }
+
+    @Override
+    public Long countMessages(String username) {
+        Long userId = getRequiredUserId(username);
+        return messageMapper.selectCount(new LambdaQueryWrapper<Message>()
+                .and(wrapper -> wrapper
+                        .eq(Message::getSenderId, userId)
+                        .or()
+                        .eq(Message::getReceiverId, userId)));
+    }
 }

@@ -49,4 +49,9 @@ public class MessageController {
         messageService.deleteMessage(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
     }
+
+    @GetMapping("/count")
+    public ApiResponse<Long> count(Authentication authentication) {
+        return ApiResponse.success(messageService.countMessages(authentication.getName()));
+    }
 }
