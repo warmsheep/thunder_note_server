@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,20 +33,28 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
-    public List<Message> listMessages(String username, Long flashNoteId) {
+    public List<Message> listMessages(String username, Long flashNoteId, Integer page, Integer limit) {
         Long userId = getRequiredUserId(username);
         LambdaQueryWrapper<Message> queryWrapper = new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
                         .eq(Message::getSenderId, userId)
                         .or()
                         .eq(Message::getReceiverId, userId))
-                .orderByAsc(Message::getCreatedAt);
+                .orderByDesc(Message::getId);
 
         if (flashNoteId != null) {
             queryWrapper.eq(Message::getFlashNoteId, flashNoteId);
         }
 
-        return messageMapper.selectList(queryWrapper);
+        int actualLimit = (limit != null && limit > 0) ? limit : 30;
+        int actualPage = (page != null && page > 0) ? page : 1;
+        int offset = (actualPage - 1) * actualLimit;
+
+        queryWrapper.last("LIMIT " + actualLimit + " OFFSET " + offset);
+
+        List<Message> messages = messageMapper.selectList(queryWrapper);
+        Collections.reverse(messages);
+        return messages;
     }
 
     @Override

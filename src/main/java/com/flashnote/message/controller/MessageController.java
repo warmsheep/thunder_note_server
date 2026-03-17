@@ -30,7 +30,8 @@ public class MessageController {
     public ApiResponse<List<Message>> list(Authentication authentication,
                                           @RequestBody(required = false) MessageListRequest request) {
         Long flashNoteId = request == null ? null : request.getFlashNoteId();
-        return ApiResponse.success(messageService.listMessages(authentication.getName(), flashNoteId));
+        return ApiResponse.success(messageService.listMessages(
+            authentication.getName(), flashNoteId, request.getPage(), request.getLimit()));
     }
 
     @PostMapping
