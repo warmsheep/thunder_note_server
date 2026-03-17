@@ -1,6 +1,7 @@
 package com.flashnote.file.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.file.dto.FileUploadResult;
 import com.flashnote.file.service.FileService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -24,8 +25,8 @@ public class FileController {
     }
 
     @PostMapping("/upload")
-    public ApiResponse<String> upload(Authentication authentication,
-                                      @RequestParam("file") MultipartFile file) {
+    public ApiResponse<FileUploadResult> upload(Authentication authentication,
+                                                 @RequestParam("file") MultipartFile file) {
         return ApiResponse.success(fileService.upload(authentication.getName(), file));
     }
 

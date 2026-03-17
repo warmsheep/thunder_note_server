@@ -6,6 +6,7 @@ import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.config.MinioConfig;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.file.dto.FileUploadResult;
 import com.flashnote.file.service.FileService;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
@@ -29,7 +30,7 @@ public class FileServiceImpl implements FileService {
     }
 
     @Override
-    public String upload(String username, MultipartFile file) {
+    public FileUploadResult upload(String username, MultipartFile file) {
         try {
             Long userId = getRequiredUserId(username);
             String extension = getFileExtension(file.getOriginalFilename());
@@ -42,7 +43,7 @@ public class FileServiceImpl implements FileService {
                     .contentType(file.getContentType())
                     .build());
 
-            return objectName;
+            return new FileUploadResult(objectName, file.getOriginalFilename());
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "File upload failed");
         }
