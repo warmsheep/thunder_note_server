@@ -10,6 +10,11 @@ public class FavoriteMessageItem {
     private String flashNoteIcon;
     private String role;
     private String content;
+    private String mediaType;
+    private String mediaUrl;
+    private String fileName;
+    private Long fileSize;
+    private Integer mediaDuration;
     private LocalDateTime messageCreatedAt;
     private LocalDateTime favoritedAt;
 
@@ -67,6 +72,46 @@ public class FavoriteMessageItem {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getMediaType() {
+        return mediaType;
+    }
+
+    public void setMediaType(String mediaType) {
+        this.mediaType = mediaType;
+    }
+
+    public String getMediaUrl() {
+        return mediaUrl;
+    }
+
+    public void setMediaUrl(String mediaUrl) {
+        this.mediaUrl = mediaUrl;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }
+
+    public Long getFileSize() {
+        return fileSize;
+    }
+
+    public void setFileSize(Long fileSize) {
+        this.fileSize = fileSize;
+    }
+
+    public Integer getMediaDuration() {
+        return mediaDuration;
+    }
+
+    public void setMediaDuration(Integer mediaDuration) {
+        this.mediaDuration = mediaDuration;
     }
 
     public LocalDateTime getMessageCreatedAt() {

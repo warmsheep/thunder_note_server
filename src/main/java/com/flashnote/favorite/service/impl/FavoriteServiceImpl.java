@@ -93,6 +93,11 @@ public class FavoriteServiceImpl implements FavoriteService {
         item.setContent(message.getContent());
         item.setMessageCreatedAt(message.getCreatedAt());
         item.setFavoritedAt(favorite.getCreatedAt());
+        item.setMediaType(message.getMediaType());
+        item.setMediaUrl(message.getMediaUrl());
+        item.setFileName(message.getFileName());
+        item.setFileSize(message.getFileSize());
+        item.setMediaDuration(message.getMediaDuration());
         if (message.getFlashNoteId() != null) {
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
             if (flashNote != null && userId.equals(flashNote.getUserId())) {
