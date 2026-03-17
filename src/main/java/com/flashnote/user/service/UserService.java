@@ -6,4 +6,6 @@ public interface UserService {
     UserProfile getProfile(String username);
 
     UserProfile updateProfile(String username, UserProfile profile);
+
+    String updateAvatar(String username, String avatarUrl);
 }

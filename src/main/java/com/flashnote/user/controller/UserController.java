@@ -29,4 +29,11 @@ public class UserController {
                                                   @RequestBody UserProfile profile) {
         return ApiResponse.success(userService.updateProfile(authentication.getName(), profile));
     }
+
+    @PutMapping("/avatar")
+    public ApiResponse<String> updateAvatar(Authentication authentication,
+                                         @RequestBody java.util.Map<String, String> body) {
+        String avatarUrl = body.get("avatar");
+        return ApiResponse.success(userService.updateAvatar(authentication.getName(), avatarUrl));
+    }
 }

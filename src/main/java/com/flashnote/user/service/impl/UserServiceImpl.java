@@ -43,6 +43,14 @@ public class UserServiceImpl implements UserService {
         return current;
     }
 
+    @Override
+    public String updateAvatar(String username, String avatarUrl) {
+        User user = getRequiredUser(username);
+        user.setAvatar(avatarUrl);
+        userMapper.updateById(user);
+        return avatarUrl;
+    }
+
     private User getRequiredUser(String username) {
         User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
                 .eq(User::getUsername, username));
