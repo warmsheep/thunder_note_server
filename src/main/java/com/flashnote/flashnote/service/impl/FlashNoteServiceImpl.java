@@ -349,9 +349,8 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     private Message latestInboxMessage(Long userId) {
         List<Message> inboxMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
                 .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
-                .and(wrapper -> wrapper.eq(Message::getSenderId, userId)
-                        .or()
-                        .eq(Message::getReceiverId, userId))
+                .eq(Message::getSenderId, userId)
+                .eq(Message::getReceiverId, userId)
                 .orderByDesc(Message::getCreatedAt)
                 .orderByDesc(Message::getId)
                 .last("LIMIT 1"));

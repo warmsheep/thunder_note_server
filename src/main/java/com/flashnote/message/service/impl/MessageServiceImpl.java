@@ -60,6 +60,10 @@ public class MessageServiceImpl implements MessageService {
 
         if (flashNoteId != null) {
             queryWrapper.eq(Message::getFlashNoteId, flashNoteId);
+            if (flashNoteId == COLLECTION_BOX_NOTE_ID) {
+                queryWrapper.eq(Message::getSenderId, userId)
+                        .eq(Message::getReceiverId, userId);
+            }
         } else if (peerUserId != null) {
             queryWrapper.and(wrapper -> wrapper
                     .and(pair -> pair.eq(Message::getSenderId, userId).eq(Message::getReceiverId, peerUserId))
@@ -81,7 +85,9 @@ public class MessageServiceImpl implements MessageService {
     public Message sendMessage(String username, Message message) {
         Long senderId = getRequiredUserId(username);
         message.setSenderId(senderId);
-        if (message.getReceiverId() == null) {
+        if (message.getFlashNoteId() != null && message.getFlashNoteId() == COLLECTION_BOX_NOTE_ID) {
+            message.setReceiverId(senderId);
+        } else if (message.getReceiverId() == null) {
             message.setReceiverId(senderId);
         }
         if (message.getRole() == null || message.getRole().isBlank()) {
