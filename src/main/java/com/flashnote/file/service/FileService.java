@@ -9,4 +9,6 @@ public interface FileService {
     FileUploadResult upload(String username, MultipartFile file);
 
     InputStream download(String objectName);
+
+    void deleteObject(String objectName);
 }

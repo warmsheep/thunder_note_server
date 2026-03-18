@@ -7,9 +7,11 @@ import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
+import com.flashnote.file.service.FileService;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
 import com.flashnote.message.service.MessageService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -24,12 +26,24 @@ public class MessageServiceImpl implements MessageService {
     private final MessageMapper messageMapper;
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
+    private final FileService fileService;
     private final Map<Long, SseEmitter> emitterMap = new ConcurrentHashMap<>();
 
-    public MessageServiceImpl(MessageMapper messageMapper, UserMapper userMapper, FlashNoteMapper flashNoteMapper) {
+    @Autowired
+    public MessageServiceImpl(MessageMapper messageMapper,
+                              UserMapper userMapper,
+                              FlashNoteMapper flashNoteMapper,
+                              FileService fileService) {
         this.messageMapper = messageMapper;
         this.userMapper = userMapper;
         this.flashNoteMapper = flashNoteMapper;
+        this.fileService = fileService;
+    }
+
+    public MessageServiceImpl(MessageMapper messageMapper,
+                              UserMapper userMapper,
+                              FlashNoteMapper flashNoteMapper) {
+        this(messageMapper, userMapper, flashNoteMapper, null);
     }
 
     @Override
@@ -90,6 +104,13 @@ public class MessageServiceImpl implements MessageService {
             }
         }
         messageMapper.insert(message);
+        if (message.getFlashNoteId() != null) {
+            FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
+            if (flashNote != null && senderId.equals(flashNote.getUserId())) {
+                flashNote.setContent(message.getContent());
+                flashNoteMapper.updateById(flashNote);
+            }
+        }
 
         SseEmitter receiverEmitter = emitterMap.get(message.getReceiverId());
         if (receiverEmitter != null) {
@@ -146,8 +167,20 @@ public class MessageServiceImpl implements MessageService {
         if (!isOwner && !isReceiver) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "You can only delete your own messages");
         }
+
+        deleteMediaIfNecessary(message);
         
         messageMapper.deleteById(messageId);
+    }
+
+    private void deleteMediaIfNecessary(Message message) {
+        if (fileService == null || message == null || message.getMediaUrl() == null || message.getMediaUrl().isBlank()) {
+            return;
+        }
+        fileService.deleteObject(message.getMediaUrl());
+        if (message.getThumbnailUrl() != null && !message.getThumbnailUrl().isBlank()) {
+            fileService.deleteObject(message.getThumbnailUrl());
+        }
     }
 
     @Override

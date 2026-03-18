@@ -11,14 +11,20 @@ import com.flashnote.file.service.FileService;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @Service
 public class FileServiceImpl implements FileService {
+    private static final Logger log = LoggerFactory.getLogger(FileServiceImpl.class);
     private final MinioClient minioClient;
     private final MinioConfig minioConfig;
     private final UserMapper userMapper;
@@ -54,10 +60,26 @@ public class FileServiceImpl implements FileService {
         try {
             return minioClient.getObject(GetObjectArgs.builder()
                     .bucket(minioConfig.getBucket())
-                    .object(objectName)
+                    .object(normalizeObjectName(objectName))
                     .build());
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "File not found");
+        }
+    }
+
+    @Override
+    public void deleteObject(String objectName) {
+        String normalizedObjectName = normalizeObjectName(objectName);
+        if (normalizedObjectName.isEmpty()) {
+            return;
+        }
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(minioConfig.getBucket())
+                    .object(normalizedObjectName)
+                    .build());
+        } catch (Exception ex) {
+            log.warn("Delete object failed: {}", normalizedObjectName, ex);
         }
     }
 
@@ -74,5 +96,34 @@ public class FileServiceImpl implements FileService {
             return "";
         }
         return fileName.substring(fileName.lastIndexOf('.'));
+    }
+
+    private String normalizeObjectName(String objectName) {
+        if (objectName == null || objectName.isBlank()) {
+            return "";
+        }
+        String value = objectName.trim();
+        if (value.startsWith("http")) {
+            int queryStart = value.indexOf('?');
+            String query = queryStart >= 0 ? value.substring(queryStart + 1) : "";
+            for (String pair : query.split("&")) {
+                if (pair.startsWith("objectName=")) {
+                    return URLDecoder.decode(pair.substring("objectName=".length()), StandardCharsets.UTF_8);
+                }
+            }
+            int schemeSplit = value.indexOf("://");
+            int pathStart = value.indexOf('/', schemeSplit > 0 ? schemeSplit + 3 : 0);
+            if (pathStart >= 0 && pathStart + 1 < value.length()) {
+                value = value.substring(pathStart + 1);
+            }
+            if (value.startsWith("api/files/download")) {
+                return "";
+            }
+            return value;
+        }
+        if (value.startsWith("/")) {
+            value = value.substring(1);
+        }
+        return value;
     }
 }

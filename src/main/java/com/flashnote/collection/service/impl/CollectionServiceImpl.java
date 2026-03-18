@@ -11,8 +11,10 @@ import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class CollectionServiceImpl implements CollectionService {
@@ -45,6 +47,7 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     @Override
+    @Transactional
     public Collection updateCollection(String username, Long id, Collection incoming) {
         Long userId = getRequiredUserId(username);
         Collection collection = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
@@ -64,6 +67,7 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     @Override
+    @Transactional
     public void deleteCollection(String username, Long id) {
         Long userId = getRequiredUserId(username);
         Collection collection = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
@@ -84,13 +88,16 @@ public class CollectionServiceImpl implements CollectionService {
         if (isBlank(oldName) || oldName.equals(newName)) {
             return;
         }
+        String normalizedOld = normalizeName(oldName);
+        String normalizedNew = normalizeName(newName);
         List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
-                .eq(FlashNote::getDeleted, false)
-                .eq(FlashNote::getTags, oldName));
+                .eq(FlashNote::getDeleted, false));
         for (FlashNote note : notes) {
-            note.setTags(newName);
-            flashNoteMapper.updateById(note);
+            if (normalizedOld.equals(normalizeName(note.getTags()))) {
+                note.setTags(normalizedNew);
+                flashNoteMapper.updateById(note);
+            }
         }
     }
 
@@ -98,18 +105,27 @@ public class CollectionServiceImpl implements CollectionService {
         if (isBlank(collectionName)) {
             return;
         }
+        String normalizedCollectionName = normalizeName(collectionName);
         List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
-                .eq(FlashNote::getDeleted, false)
-                .eq(FlashNote::getTags, collectionName));
+                .eq(FlashNote::getDeleted, false));
         for (FlashNote note : notes) {
-            note.setTags(null);
-            flashNoteMapper.updateById(note);
+            if (normalizedCollectionName.equals(normalizeName(note.getTags()))) {
+                note.setTags(null);
+                flashNoteMapper.updateById(note);
+            }
         }
     }
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String normalizeName(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private Long getRequiredUserId(String username) {

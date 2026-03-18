@@ -10,25 +10,43 @@ import com.flashnote.flashnote.dto.MatchedMessageInfo;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.flashnote.service.FlashNoteService;
+import com.flashnote.file.service.FileService;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class FlashNoteServiceImpl implements FlashNoteService {
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
     private final MessageMapper messageMapper;
+    private final FileService fileService;
 
-    public FlashNoteServiceImpl(UserMapper userMapper, FlashNoteMapper flashNoteMapper, MessageMapper messageMapper) {
+    @Autowired
+    public FlashNoteServiceImpl(UserMapper userMapper,
+                                FlashNoteMapper flashNoteMapper,
+                                MessageMapper messageMapper,
+                                FileService fileService) {
         this.userMapper = userMapper;
         this.flashNoteMapper = flashNoteMapper;
         this.messageMapper = messageMapper;
+        this.fileService = fileService;
+    }
+
+    public FlashNoteServiceImpl(UserMapper userMapper,
+                                FlashNoteMapper flashNoteMapper,
+                                MessageMapper messageMapper) {
+        this(userMapper, flashNoteMapper, messageMapper, null);
     }
 
     @Override
@@ -217,6 +235,17 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
         note.setDeleted(true);
         flashNoteMapper.updateById(note);
+
+        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, noteId));
+        for (Message message : messages) {
+            if (fileService != null && message.getMediaUrl() != null && !message.getMediaUrl().isBlank()) {
+                fileService.deleteObject(message.getMediaUrl());
+            }
+            if (fileService != null && message.getThumbnailUrl() != null && !message.getThumbnailUrl().isBlank()) {
+                fileService.deleteObject(message.getThumbnailUrl());
+            }
+        }
 
         messageMapper.delete(new LambdaQueryWrapper<Message>()
                 .eq(Message::getFlashNoteId, noteId));
