@@ -52,10 +52,12 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     @Override
     public List<FlashNote> listNotes(String username) {
         Long userId = getRequiredUserId(username);
-        return flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
+        List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
                 .eq(FlashNote::getDeleted, false)
                 .orderByDesc(FlashNote::getUpdatedAt));
+        fillLatestMessages(notes, userId);
+        return notes;
     }
 
     @Override
@@ -257,5 +259,59 @@ public class FlashNoteServiceImpl implements FlashNoteService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
         }
         return user.getId();
+    }
+
+    private void fillLatestMessages(List<FlashNote> notes, Long userId) {
+        if (notes == null || notes.isEmpty()) {
+            return;
+        }
+
+        List<Long> noteIds = notes.stream()
+                .map(FlashNote::getId)
+                .filter(id -> id != null)
+                .collect(Collectors.toList());
+        if (noteIds.isEmpty()) {
+            return;
+        }
+
+        List<Message> allMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .in(Message::getFlashNoteId, noteIds)
+                .and(wrapper -> wrapper.eq(Message::getSenderId, userId)
+                        .or()
+                        .eq(Message::getReceiverId, userId))
+                .orderByDesc(Message::getCreatedAt)
+                .orderByDesc(Message::getId));
+
+        Map<Long, Message> latestByNoteId = new LinkedHashMap<>();
+        for (Message message : allMessages) {
+            if (message.getFlashNoteId() != null && !latestByNoteId.containsKey(message.getFlashNoteId())) {
+                latestByNoteId.put(message.getFlashNoteId(), message);
+            }
+        }
+
+        for (FlashNote note : notes) {
+            Message latest = latestByNoteId.get(note.getId());
+            note.setLatestMessage(resolveLatestMessage(latest));
+        }
+    }
+
+    private String resolveLatestMessage(Message latest) {
+        if (latest == null) {
+            return null;
+        }
+        String mediaType = latest.getMediaType();
+        if (mediaType != null && !mediaType.isBlank() && !"TEXT".equalsIgnoreCase(mediaType)) {
+            if ("IMAGE".equalsIgnoreCase(mediaType)) {
+                return "[图片]";
+            }
+            if ("VIDEO".equalsIgnoreCase(mediaType)) {
+                return "[视频]";
+            }
+            if ("VOICE".equalsIgnoreCase(mediaType)) {
+                return "[语音]";
+            }
+            return "[文件]";
+        }
+        return latest.getContent();
     }
 }

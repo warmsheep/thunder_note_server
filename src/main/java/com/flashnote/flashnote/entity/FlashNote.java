@@ -1,6 +1,7 @@
 package com.flashnote.flashnote.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -15,7 +16,10 @@ public class FlashNote {
     private String title;
     private String icon;
     private String content;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String tags;
+    @TableField(exist = false)
+    private String latestMessage;
     @TableField("is_deleted")
     private Boolean deleted;
     private LocalDateTime createdAt;
@@ -67,6 +71,14 @@ public class FlashNote {
 
     public void setTags(String tags) {
         this.tags = tags;
+    }
+
+    public String getLatestMessage() {
+        return latestMessage;
+    }
+
+    public void setLatestMessage(String latestMessage) {
+        this.latestMessage = latestMessage;
     }
 
     public Boolean getDeleted() {
