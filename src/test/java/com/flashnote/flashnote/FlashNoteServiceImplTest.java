@@ -4,6 +4,7 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
@@ -113,7 +114,10 @@ class FlashNoteServiceImplTest {
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
-        List<FlashNoteSearchResult> result = service.searchNotes("alice", "旅行");
+        FlashNoteSearchResponse response = service.searchNotes("alice", "旅行");
+        List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
+        if (response.getNoteNameMatched() != null) result.addAll(response.getNoteNameMatched());
+        if (response.getMessageContentMatched() != null) result.addAll(response.getMessageContentMatched());
 
         assertEquals(2, result.size());
         assertEquals("旅行计划", result.get(0).getFlashNote().getTitle());
@@ -136,7 +140,10 @@ class FlashNoteServiceImplTest {
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
-        List<FlashNoteSearchResult> result = service.searchNotes("alice", "   ");
+        FlashNoteSearchResponse response = service.searchNotes("alice", "   ");
+        List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
+        if (response.getNoteNameMatched() != null) result.addAll(response.getNoteNameMatched());
+        if (response.getMessageContentMatched() != null) result.addAll(response.getMessageContentMatched());
 
         assertEquals(2, result.size());
         assertEquals("收集箱", result.get(0).getFlashNote().getTitle());
@@ -169,7 +176,10 @@ class FlashNoteServiceImplTest {
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
-        List<FlashNoteSearchResult> result = service.searchNotes("alice", "budget");
+        FlashNoteSearchResponse response = service.searchNotes("alice", "budget");
+        List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
+        if (response.getNoteNameMatched() != null) result.addAll(response.getNoteNameMatched());
+        if (response.getMessageContentMatched() != null) result.addAll(response.getMessageContentMatched());
 
         assertEquals(1, result.size());
         assertEquals("Note Title", result.get(0).getFlashNote().getTitle());
@@ -204,7 +214,10 @@ class FlashNoteServiceImplTest {
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
-        List<FlashNoteSearchResult> result = service.searchNotes("alice", "旅行");
+        FlashNoteSearchResponse response = service.searchNotes("alice", "旅行");
+        List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
+        if (response.getNoteNameMatched() != null) result.addAll(response.getNoteNameMatched());
+        if (response.getMessageContentMatched() != null) result.addAll(response.getMessageContentMatched());
 
         assertEquals(1, result.size());
         assertEquals("旅行计划", result.get(0).getFlashNote().getTitle());
@@ -237,7 +250,10 @@ class FlashNoteServiceImplTest {
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
-        List<FlashNoteSearchResult> result = service.searchNotes("alice", "budget");
+        FlashNoteSearchResponse response = service.searchNotes("alice", "budget");
+        List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
+        if (response.getNoteNameMatched() != null) result.addAll(response.getNoteNameMatched());
+        if (response.getMessageContentMatched() != null) result.addAll(response.getMessageContentMatched());
 
         assertEquals(1, result.size());
         String snippet = result.get(0).getMatchedMessages().get(0).getSnippet();

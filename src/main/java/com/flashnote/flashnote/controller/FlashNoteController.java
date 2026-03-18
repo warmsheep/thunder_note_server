@@ -2,6 +2,7 @@ package com.flashnote.flashnote.controller;
 
 import com.flashnote.common.response.ApiResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchRequest;
+import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.service.FlashNoteService;
@@ -32,7 +33,7 @@ public class FlashNoteController {
     }
 
     @PostMapping("/search")
-    public ApiResponse<List<FlashNoteSearchResult>> search(Authentication authentication,
+    public ApiResponse<FlashNoteSearchResponse> search(Authentication authentication,
                                                            @RequestBody FlashNoteSearchRequest request) {
         String query = request == null ? null : request.getQuery();
         return ApiResponse.success(flashNoteService.searchNotes(authentication.getName(), query));

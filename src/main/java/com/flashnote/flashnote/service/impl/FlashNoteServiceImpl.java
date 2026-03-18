@@ -5,6 +5,7 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
 import com.flashnote.flashnote.dto.MatchedMessageInfo;
 import com.flashnote.flashnote.entity.FlashNote;
@@ -71,13 +72,14 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     }
 
     @Override
-    public List<FlashNoteSearchResult> searchNotes(String username, String query) {
+    public FlashNoteSearchResponse searchNotes(String username, String query) {
         String normalized = query == null ? "" : query.trim();
         if (normalized.isEmpty()) {
             List<FlashNote> notes = listNotes(username);
-            return notes.stream()
+            List<FlashNoteSearchResult> results = notes.stream()
                     .map(note -> new FlashNoteSearchResult(note, null, true))
                     .collect(Collectors.toList());
+            return new FlashNoteSearchResponse(results, new ArrayList<>());
         }
         Long userId = getRequiredUserId(username);
 
@@ -105,30 +107,21 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                 .collect(Collectors.groupingBy(Message::getFlashNoteId));
 
         Set<Long> messageMatchedNoteIds = messagesByNoteId.keySet();
-        List<FlashNote> messageMatchedNotes = new ArrayList<>();
+        List<FlashNote> messageMatchedOnlyNotes = new ArrayList<>();
         if (!messageMatchedNoteIds.isEmpty()) {
-            messageMatchedNotes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
+            List<FlashNote> allMessageMatchedNotes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                     .eq(FlashNote::getUserId, userId)
                     .eq(FlashNote::getDeleted, false)
                     .in(FlashNote::getId, messageMatchedNoteIds)
                     .orderByDesc(FlashNote::getUpdatedAt));
-        }
-
-        Map<Long, FlashNote> mergedNotes = new LinkedHashMap<>();
-        for (FlashNote note : titleMatchedNotes) {
-            mergedNotes.put(note.getId(), note);
-        }
-        for (FlashNote note : messageMatchedNotes) {
-            if (!mergedNotes.containsKey(note.getId())) {
-                mergedNotes.put(note.getId(), note);
+            for (FlashNote note : allMessageMatchedNotes) {
+                if (!titleMatchedIds.contains(note.getId())) {
+                    messageMatchedOnlyNotes.add(note);
+                }
             }
         }
 
-        List<FlashNote> orderedNotes = mergedNotes.values().stream()
-                .sorted(Comparator.comparing(FlashNote::getUpdatedAt).reversed())
-                .collect(Collectors.toList());
-
-        return orderedNotes.stream()
+        List<FlashNoteSearchResult> noteNameResults = titleMatchedNotes.stream()
                 .map(note -> {
                     List<Message> noteMessages = messagesByNoteId.get(note.getId());
                     List<MatchedMessageInfo> matchedMessageInfos = null;
@@ -143,9 +136,30 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                                 })
                                 .collect(Collectors.toList());
                     }
-                    return new FlashNoteSearchResult(note, matchedMessageInfos, titleMatchedIds.contains(note.getId()));
+                    return new FlashNoteSearchResult(note, matchedMessageInfos, true);
                 })
                 .collect(Collectors.toList());
+
+        List<FlashNoteSearchResult> messageContentResults = messageMatchedOnlyNotes.stream()
+                .map(note -> {
+                    List<Message> noteMessages = messagesByNoteId.get(note.getId());
+                    List<MatchedMessageInfo> matchedMessageInfos = null;
+                    if (noteMessages != null && !noteMessages.isEmpty()) {
+                        matchedMessageInfos = noteMessages.stream()
+                                .map(msg -> {
+                                    MatchedMessageInfo info = new MatchedMessageInfo(
+                                            msg.getId(),
+                                            generateSnippet(msg.getContent(), normalized));
+                                    info.setContextMessages(getMessageContext(note.getId(), msg.getId()));
+                                    return info;
+                                })
+                                .collect(Collectors.toList());
+                    }
+                    return new FlashNoteSearchResult(note, matchedMessageInfos, false);
+                })
+                .collect(Collectors.toList());
+
+        return new FlashNoteSearchResponse(noteNameResults, messageContentResults);
     }
 
     private String generateSnippet(String content, String query) {
