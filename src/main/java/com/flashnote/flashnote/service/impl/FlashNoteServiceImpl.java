@@ -21,12 +21,17 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 @Service
 public class FlashNoteServiceImpl implements FlashNoteService {
+    public static final long COLLECTION_BOX_NOTE_ID = -1L;
+    private static final String COLLECTION_BOX_TITLE = "收集箱";
+    private static final String COLLECTION_BOX_ICON = "📥";
+
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
     private final MessageMapper messageMapper;
@@ -52,10 +57,15 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     @Override
     public List<FlashNote> listNotes(String username) {
         Long userId = getRequiredUserId(username);
-        List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
+        List<FlashNote> queried = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
                 .eq(FlashNote::getDeleted, false)
+                .orderByDesc(FlashNote::getPinned)
                 .orderByDesc(FlashNote::getUpdatedAt));
+        List<FlashNote> notes = queried == null ? new ArrayList<>() : new ArrayList<>(queried);
+        FlashNote collectionBox = buildCollectionBoxNote(userId);
+        notes.removeIf(note -> note.getId() != null && note.getId().equals(COLLECTION_BOX_NOTE_ID));
+        notes.add(0, collectionBox);
         fillLatestMessages(notes, userId);
         return notes;
     }
@@ -201,12 +211,18 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         Long userId = getRequiredUserId(username);
         note.setUserId(userId);
         note.setDeleted(false);
+        note.setInbox(false);
+        note.setPinned(Boolean.TRUE.equals(note.getPinned()));
+        note.setHidden(Boolean.TRUE.equals(note.getHidden()));
         flashNoteMapper.insert(note);
         return note;
     }
 
     @Override
     public FlashNote updateNote(String username, Long noteId, FlashNote incoming) {
+        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be edited");
+        }
         Long userId = getRequiredUserId(username);
         FlashNote note = flashNoteMapper.selectOne(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getId, noteId)
@@ -221,20 +237,50 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         note.setIcon(incoming.getIcon());
         note.setContent(incoming.getContent());
         note.setTags(incoming.getTags());
+        if (incoming.getPinned() != null) {
+            note.setPinned(incoming.getPinned());
+        }
+        if (incoming.getHidden() != null) {
+            note.setHidden(incoming.getHidden());
+        }
+        flashNoteMapper.updateById(note);
+        return note;
+    }
+
+    @Override
+    public FlashNote setPinned(String username, Long noteId, boolean pinned) {
+        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be unpinned");
+        }
+        Long userId = getRequiredUserId(username);
+        FlashNote note = getOwnedNote(userId, noteId);
+        note.setPinned(pinned);
+        flashNoteMapper.updateById(note);
+        return note;
+    }
+
+    @Override
+    public FlashNote setHidden(String username, Long noteId, boolean hidden) {
+        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be hidden");
+        }
+        Long userId = getRequiredUserId(username);
+        FlashNote note = getOwnedNote(userId, noteId);
+        note.setHidden(hidden);
+        if (hidden) {
+            note.setPinned(false);
+        }
         flashNoteMapper.updateById(note);
         return note;
     }
 
     @Override
     public void deleteNote(String username, Long noteId) {
-        Long userId = getRequiredUserId(username);
-        FlashNote note = flashNoteMapper.selectOne(new LambdaQueryWrapper<FlashNote>()
-                .eq(FlashNote::getId, noteId)
-                .eq(FlashNote::getUserId, userId)
-                .eq(FlashNote::getDeleted, false));
-        if (note == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Note not found");
+        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be deleted");
         }
+        Long userId = getRequiredUserId(username);
+        FlashNote note = getOwnedNote(userId, noteId);
         note.setDeleted(true);
         flashNoteMapper.updateById(note);
 
@@ -269,12 +315,13 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         List<Long> noteIds = notes.stream()
                 .map(FlashNote::getId)
                 .filter(id -> id != null)
+                .filter(id -> id != COLLECTION_BOX_NOTE_ID)
                 .collect(Collectors.toList());
-        if (noteIds.isEmpty()) {
-            return;
-        }
+        Message inboxLatest = latestInboxMessage(userId);
 
-        List<Message> allMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        List<Message> allMessages = noteIds.isEmpty()
+                ? Collections.emptyList()
+                : messageMapper.selectList(new LambdaQueryWrapper<Message>()
                 .in(Message::getFlashNoteId, noteIds)
                 .and(wrapper -> wrapper.eq(Message::getSenderId, userId)
                         .or()
@@ -290,9 +337,57 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
 
         for (FlashNote note : notes) {
-            Message latest = latestByNoteId.get(note.getId());
-            note.setLatestMessage(resolveLatestMessage(latest));
+            if (note.getId() != null && note.getId() == COLLECTION_BOX_NOTE_ID) {
+                note.setLatestMessage(resolveLatestMessage(inboxLatest));
+            } else {
+                Message latest = latestByNoteId.get(note.getId());
+                note.setLatestMessage(resolveLatestMessage(latest));
+            }
         }
+    }
+
+    private Message latestInboxMessage(Long userId) {
+        List<Message> inboxMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+                .and(wrapper -> wrapper.eq(Message::getSenderId, userId)
+                        .or()
+                        .eq(Message::getReceiverId, userId))
+                .orderByDesc(Message::getCreatedAt)
+                .orderByDesc(Message::getId)
+                .last("LIMIT 1"));
+        return inboxMessages.isEmpty() ? null : inboxMessages.get(0);
+    }
+
+    private FlashNote buildCollectionBoxNote(Long userId) {
+        FlashNote note = new FlashNote();
+        note.setId(COLLECTION_BOX_NOTE_ID);
+        note.setUserId(userId);
+        note.setTitle(COLLECTION_BOX_TITLE);
+        note.setIcon(COLLECTION_BOX_ICON);
+        note.setContent("");
+        note.setTags("收集箱");
+        note.setDeleted(false);
+        note.setPinned(true);
+        note.setHidden(false);
+        note.setInbox(true);
+        LocalDateTime now = LocalDateTime.now();
+        note.setCreatedAt(now);
+        note.setUpdatedAt(now);
+        return note;
+    }
+
+    private FlashNote getOwnedNote(Long userId, Long noteId) {
+        FlashNote note = flashNoteMapper.selectOne(new LambdaQueryWrapper<FlashNote>()
+                .eq(FlashNote::getId, noteId)
+                .eq(FlashNote::getUserId, userId)
+                .eq(FlashNote::getDeleted, false));
+        if (note == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Note not found");
+        }
+        if (Boolean.TRUE.equals(note.getInbox())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be modified");
+        }
+        return note;
     }
 
     private String resolveLatestMessage(Message latest) {

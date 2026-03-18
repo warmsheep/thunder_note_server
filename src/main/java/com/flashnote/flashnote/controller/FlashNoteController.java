@@ -9,6 +9,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,6 +48,20 @@ public class FlashNoteController {
                                          @PathVariable Long id,
                                          @RequestBody FlashNote note) {
         return ApiResponse.success(flashNoteService.updateNote(authentication.getName(), id, note));
+    }
+
+    @PutMapping("/{id}/pin")
+    public ApiResponse<FlashNote> setPinned(Authentication authentication,
+                                            @PathVariable Long id,
+                                            @RequestParam(defaultValue = "true") boolean value) {
+        return ApiResponse.success(flashNoteService.setPinned(authentication.getName(), id, value));
+    }
+
+    @PutMapping("/{id}/hide")
+    public ApiResponse<FlashNote> setHidden(Authentication authentication,
+                                            @PathVariable Long id,
+                                            @RequestParam(defaultValue = "true") boolean value) {
+        return ApiResponse.success(flashNoteService.setHidden(authentication.getName(), id, value));
     }
 
     @DeleteMapping("/{id}")

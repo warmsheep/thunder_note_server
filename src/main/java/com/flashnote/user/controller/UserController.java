@@ -1,16 +1,23 @@
 package com.flashnote.user.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.user.dto.ContactSearchUserDto;
 import com.flashnote.user.dto.ContactUserDto;
+import com.flashnote.user.dto.FriendRequestActionRequest;
+import com.flashnote.user.dto.FriendRequestCreateRequest;
+import com.flashnote.user.dto.FriendRequestDto;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.service.UserService;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -31,6 +38,50 @@ public class UserController {
     @GetMapping("/contacts")
     public ApiResponse<List<ContactUserDto>> listContacts(Authentication authentication) {
         return ApiResponse.success(userService.listContacts(authentication.getName()));
+    }
+
+    @GetMapping("/contacts/requests")
+    public ApiResponse<List<FriendRequestDto>> listFriendRequests(Authentication authentication) {
+        return ApiResponse.success(userService.listPendingRequests(authentication.getName()));
+    }
+
+    @GetMapping("/contacts/requests/count")
+    public ApiResponse<Long> countFriendRequests(Authentication authentication) {
+        return ApiResponse.success(userService.countPendingRequests(authentication.getName()));
+    }
+
+    @PostMapping("/contacts/request")
+    public ApiResponse<Void> sendFriendRequest(Authentication authentication,
+                                               @RequestBody FriendRequestCreateRequest request) {
+        userService.sendFriendRequest(authentication.getName(), request == null ? null : request.getTargetUserId());
+        return ApiResponse.success("Requested", null);
+    }
+
+    @PostMapping("/contacts/request/accept")
+    public ApiResponse<Void> acceptFriendRequest(Authentication authentication,
+                                                 @RequestBody FriendRequestActionRequest request) {
+        userService.acceptFriendRequest(authentication.getName(), request == null ? null : request.getRequestId());
+        return ApiResponse.success("Accepted", null);
+    }
+
+    @PostMapping("/contacts/request/reject")
+    public ApiResponse<Void> rejectFriendRequest(Authentication authentication,
+                                                 @RequestBody FriendRequestActionRequest request) {
+        userService.rejectFriendRequest(authentication.getName(), request == null ? null : request.getRequestId());
+        return ApiResponse.success("Rejected", null);
+    }
+
+    @DeleteMapping("/contacts/{contactUserId}")
+    public ApiResponse<Void> deleteContact(Authentication authentication,
+                                           @PathVariable Long contactUserId) {
+        userService.removeContact(authentication.getName(), contactUserId);
+        return ApiResponse.success("Deleted", null);
+    }
+
+    @GetMapping("/contacts/search")
+    public ApiResponse<List<ContactSearchUserDto>> searchContacts(Authentication authentication,
+                                                                  @RequestParam(defaultValue = "") String keyword) {
+        return ApiResponse.success(userService.searchUsers(authentication.getName(), keyword));
     }
 
     @PutMapping("/profile")

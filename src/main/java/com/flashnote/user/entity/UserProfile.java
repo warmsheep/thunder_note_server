@@ -20,6 +20,9 @@ public class UserProfile {
     @TableField(exist = false)
     private String avatar;
 
+    @TableField(exist = false)
+    private String nickname;
+
     public Long getId() {
         return id;
     }
@@ -74,5 +77,13 @@ public class UserProfile {
 
     public void setAvatar(String avatar) {
         this.avatar = avatar;
+    }
+
+    public String getNickname() {
+        return nickname;
+    }
+
+    public void setNickname(String nickname) {
+        this.nickname = nickname;
     }
 }

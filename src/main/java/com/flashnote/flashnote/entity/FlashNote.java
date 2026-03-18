@@ -22,6 +22,12 @@ public class FlashNote {
     private String latestMessage;
     @TableField("is_deleted")
     private Boolean deleted;
+    @TableField("is_pinned")
+    private Boolean pinned;
+    @TableField("is_hidden")
+    private Boolean hidden;
+    @TableField("is_inbox")
+    private Boolean inbox;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -91,6 +97,30 @@ public class FlashNote {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public Boolean getPinned() {
+        return pinned;
+    }
+
+    public void setPinned(Boolean pinned) {
+        this.pinned = pinned;
+    }
+
+    public Boolean getHidden() {
+        return hidden;
+    }
+
+    public void setHidden(Boolean hidden) {
+        this.hidden = hidden;
+    }
+
+    public Boolean getInbox() {
+        return inbox;
+    }
+
+    public void setInbox(Boolean inbox) {
+        this.inbox = inbox;
     }
 
     public void setCreatedAt(LocalDateTime createdAt) {

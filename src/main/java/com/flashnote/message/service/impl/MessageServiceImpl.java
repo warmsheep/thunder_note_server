@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MessageServiceImpl implements MessageService {
+    private static final long COLLECTION_BOX_NOTE_ID = -1L;
+
     private final MessageMapper messageMapper;
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
@@ -86,9 +88,11 @@ public class MessageServiceImpl implements MessageService {
             message.setRole("user");
         }
         if (message.getFlashNoteId() != null) {
-            FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
-            if (flashNote == null || !senderId.equals(flashNote.getUserId())) {
-                throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
+            if (message.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
+                FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
+                if (flashNote == null || !senderId.equals(flashNote.getUserId())) {
+                    throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
+                }
             }
         }
         message.setReadStatus(false);
@@ -108,7 +112,7 @@ public class MessageServiceImpl implements MessageService {
             }
         }
         messageMapper.insert(message);
-        if (message.getFlashNoteId() != null) {
+        if (message.getFlashNoteId() != null && message.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
             if (flashNote != null && senderId.equals(flashNote.getUserId())) {
                 flashNote.setContent(message.getContent());

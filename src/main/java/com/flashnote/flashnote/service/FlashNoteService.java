@@ -14,5 +14,9 @@ public interface FlashNoteService {
 
     FlashNote updateNote(String username, Long noteId, FlashNote note);
 
+    FlashNote setPinned(String username, Long noteId, boolean pinned);
+
+    FlashNote setHidden(String username, Long noteId, boolean hidden);
+
     void deleteNote(String username, Long noteId);
 }

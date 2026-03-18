@@ -63,9 +63,10 @@ class FlashNoteServiceImplTest {
         List<FlashNote> result = service.listNotes("alice");
 
         // Then
-        assertEquals(2, result.size());
-        assertEquals("Note 1", result.get(0).getTitle());
-        assertEquals("Note 2", result.get(1).getTitle());
+        assertEquals(3, result.size());
+        assertEquals("收集箱", result.get(0).getTitle());
+        assertEquals("Note 1", result.get(1).getTitle());
+        assertEquals("Note 2", result.get(2).getTitle());
         verify(flashNoteMapper).selectList(any());
     }
 
@@ -83,7 +84,8 @@ class FlashNoteServiceImplTest {
         List<FlashNote> result = service.listNotes("alice");
 
         // Then
-        assertTrue(result.isEmpty());
+        assertEquals(1, result.size());
+        assertEquals("收集箱", result.get(0).getTitle());
     }
 
     @Test
@@ -136,8 +138,9 @@ class FlashNoteServiceImplTest {
 
         List<FlashNoteSearchResult> result = service.searchNotes("alice", "   ");
 
-        assertEquals(1, result.size());
-        assertEquals("Test", result.get(0).getFlashNote().getTitle());
+        assertEquals(2, result.size());
+        assertEquals("收集箱", result.get(0).getFlashNote().getTitle());
+        assertEquals("Test", result.get(1).getFlashNote().getTitle());
     }
 
     @Test
