@@ -26,6 +26,8 @@ public interface UserService {
 
     void rejectFriendRequest(String username, Long requestId);
 
+    void cancelFriendRequest(String username, Long requestId);
+
     void removeContact(String username, Long contactUserId);
 
     List<ContactSearchUserDto> searchUsers(String username, String keyword);

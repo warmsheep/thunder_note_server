@@ -71,6 +71,13 @@ public class UserController {
         return ApiResponse.success("Rejected", null);
     }
 
+    @DeleteMapping("/contacts/request/{requestId}")
+    public ApiResponse<Void> cancelFriendRequest(Authentication authentication,
+                                                 @PathVariable Long requestId) {
+        userService.cancelFriendRequest(authentication.getName(), requestId);
+        return ApiResponse.success("Cancelled", null);
+    }
+
     @DeleteMapping("/contacts/{contactUserId}")
     public ApiResponse<Void> deleteContact(Authentication authentication,
                                            @PathVariable Long contactUserId) {

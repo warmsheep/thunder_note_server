@@ -287,16 +287,31 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void cancelFriendRequest(String username, Long requestId) {
+        User currentUser = getRequiredUser(username);
+        if (requestId == null || requestId <= 0L) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Request id is required");
+        }
+        FriendRelation relation = friendRelationMapper.selectById(requestId);
+        if (relation == null || !REL_PENDING.equals(relation.getStatus()) || !currentUser.getId().equals(relation.getRequesterId())) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Pending request not found");
+        }
+        friendRelationMapper.deleteById(requestId);
+    }
+
+    @Override
     public void removeContact(String username, Long contactUserId) {
         User currentUser = getRequiredUser(username);
         if (contactUserId == null || contactUserId <= 0L) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Contact user is required");
         }
         FriendRelation pair = findPair(currentUser.getId(), contactUserId);
-        if (pair == null || !REL_ACCEPTED.equals(pair.getStatus())) {
+        if (pair == null) {
             return;
         }
-        friendRelationMapper.deleteById(pair.getId());
+        if (REL_ACCEPTED.equals(pair.getStatus()) || REL_PENDING.equals(pair.getStatus())) {
+            friendRelationMapper.deleteById(pair.getId());
+        }
     }
 
     @Override
