@@ -1,14 +1,18 @@
 package com.flashnote.user.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.user.dto.ContactUserDto;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.service.UserService;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/users")
@@ -22,6 +26,11 @@ public class UserController {
     @PostMapping("/profile")
     public ApiResponse<UserProfile> getProfile(Authentication authentication) {
         return ApiResponse.success(userService.getProfile(authentication.getName()));
+    }
+
+    @GetMapping("/contacts")
+    public ApiResponse<List<ContactUserDto>> listContacts(Authentication authentication) {
+        return ApiResponse.success(userService.listContacts(authentication.getName()));
     }
 
     @PutMapping("/profile")

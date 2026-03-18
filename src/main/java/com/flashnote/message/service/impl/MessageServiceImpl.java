@@ -47,7 +47,7 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
-    public List<Message> listMessages(String username, Long flashNoteId, Integer page, Integer limit) {
+    public List<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit) {
         Long userId = getRequiredUserId(username);
         LambdaQueryWrapper<Message> queryWrapper = new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
@@ -58,6 +58,10 @@ public class MessageServiceImpl implements MessageService {
 
         if (flashNoteId != null) {
             queryWrapper.eq(Message::getFlashNoteId, flashNoteId);
+        } else if (peerUserId != null) {
+            queryWrapper.and(wrapper -> wrapper
+                    .and(pair -> pair.eq(Message::getSenderId, userId).eq(Message::getReceiverId, peerUserId))
+                    .or(pair -> pair.eq(Message::getSenderId, peerUserId).eq(Message::getReceiverId, userId)));
         }
 
         int actualLimit = (limit != null && limit > 0) ? limit : 20;

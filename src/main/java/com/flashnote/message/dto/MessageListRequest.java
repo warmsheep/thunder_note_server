@@ -2,6 +2,7 @@ package com.flashnote.message.dto;
 
 public class MessageListRequest {
     private Long flashNoteId;
+    private Long peerUserId;
     private Integer page;   // 页码，从1开始，默认1
     private Integer limit;  // 每页条数，默认30
 
@@ -15,6 +16,14 @@ public class MessageListRequest {
 
     public Integer getPage() {
         return page;
+    }
+
+    public Long getPeerUserId() {
+        return peerUserId;
+    }
+
+    public void setPeerUserId(Long peerUserId) {
+        this.peerUserId = peerUserId;
     }
 
     public void setPage(Integer page) {

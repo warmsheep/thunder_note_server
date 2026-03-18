@@ -6,7 +6,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 
 public interface MessageService {
-    List<Message> listMessages(String username, Long flashNoteId, Integer page, Integer limit);
+    List<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit);
 
     Message sendMessage(String username, Message message);
 

@@ -5,10 +5,13 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.user.dto.ContactUserDto;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.mapper.UserProfileMapper;
 import com.flashnote.user.service.UserService;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -50,6 +53,18 @@ public class UserServiceImpl implements UserService {
         user.setAvatar(avatarUrl);
         userMapper.updateById(user);
         return avatarUrl;
+    }
+
+    @Override
+    public List<ContactUserDto> listContacts(String username) {
+        User currentUser = getRequiredUser(username);
+        return userMapper.selectList(new LambdaQueryWrapper<User>()
+                        .eq(User::getStatus, 1)
+                        .ne(User::getId, currentUser.getId())
+                        .orderByAsc(User::getUsername))
+                .stream()
+                .map(user -> new ContactUserDto(user.getId(), user.getUsername(), user.getNickname(), user.getAvatar()))
+                .toList();
     }
 
     private User getRequiredUser(String username) {
