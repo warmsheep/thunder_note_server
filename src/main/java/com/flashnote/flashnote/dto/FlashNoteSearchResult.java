@@ -6,10 +6,17 @@ import java.util.List;
 public class FlashNoteSearchResult {
     private FlashNote flashNote;
     private List<MatchedMessageInfo> matchedMessages;
+    private boolean noteMatched;
 
     public FlashNoteSearchResult(FlashNote flashNote, List<MatchedMessageInfo> matchedMessages) {
         this.flashNote = flashNote;
         this.matchedMessages = matchedMessages;
+    }
+
+    public FlashNoteSearchResult(FlashNote flashNote, List<MatchedMessageInfo> matchedMessages, boolean noteMatched) {
+        this.flashNote = flashNote;
+        this.matchedMessages = matchedMessages;
+        this.noteMatched = noteMatched;
     }
     
     public FlashNoteSearchResult() {}
@@ -28,5 +35,13 @@ public class FlashNoteSearchResult {
 
     public void setMatchedMessages(List<MatchedMessageInfo> matchedMessages) {
         this.matchedMessages = matchedMessages;
+    }
+
+    public boolean isNoteMatched() {
+        return noteMatched;
+    }
+
+    public void setNoteMatched(boolean noteMatched) {
+        this.noteMatched = noteMatched;
     }
 }

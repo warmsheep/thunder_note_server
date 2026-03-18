@@ -76,7 +76,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         if (normalized.isEmpty()) {
             List<FlashNote> notes = listNotes(username);
             return notes.stream()
-                    .map(note -> new FlashNoteSearchResult(note, null))
+                    .map(note -> new FlashNoteSearchResult(note, null, true))
                     .collect(Collectors.toList());
         }
         Long userId = getRequiredUserId(username);
@@ -88,6 +88,9 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                         .or()
                         .like(FlashNote::getContent, normalized))
                 .orderByDesc(FlashNote::getUpdatedAt));
+        Set<Long> titleMatchedIds = titleMatchedNotes.stream()
+                .map(FlashNote::getId)
+                .collect(Collectors.toSet());
 
         List<Message> matchedMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
                 .like(Message::getContent, normalized)
@@ -140,7 +143,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                                 })
                                 .collect(Collectors.toList());
                     }
-                    return new FlashNoteSearchResult(note, matchedMessageInfos);
+                    return new FlashNoteSearchResult(note, matchedMessageInfos, titleMatchedIds.contains(note.getId()));
                 })
                 .collect(Collectors.toList());
     }

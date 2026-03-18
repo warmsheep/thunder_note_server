@@ -5,6 +5,8 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.message.entity.Message;
+import com.flashnote.message.mapper.MessageMapper;
 import com.flashnote.user.dto.ContactSearchUserDto;
 import com.flashnote.user.dto.ContactUserDto;
 import com.flashnote.user.dto.FriendRequestDto;
@@ -32,13 +34,16 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final UserProfileMapper userProfileMapper;
     private final FriendRelationMapper friendRelationMapper;
+    private final MessageMapper messageMapper;
 
     public UserServiceImpl(UserMapper userMapper,
                            UserProfileMapper userProfileMapper,
-                           FriendRelationMapper friendRelationMapper) {
+                           FriendRelationMapper friendRelationMapper,
+                           MessageMapper messageMapper) {
         this.userMapper = userMapper;
         this.userProfileMapper = userProfileMapper;
         this.friendRelationMapper = friendRelationMapper;
+        this.messageMapper = messageMapper;
     }
 
     @Override
@@ -63,12 +68,16 @@ public class UserServiceImpl implements UserService {
         current.setBio(incoming.getBio());
         current.setPreferencesJson(incoming.getPreferencesJson());
         userProfileMapper.updateById(current);
+        User user = getRequiredUser(username);
         if (incoming.getNickname() != null) {
-            User user = getRequiredUser(username);
             user.setNickname(incoming.getNickname().trim());
-            userMapper.updateById(user);
             current.setNickname(user.getNickname());
         }
+        if (incoming.getAvatar() != null) {
+            user.setAvatar(incoming.getAvatar().trim());
+            current.setAvatar(user.getAvatar());
+        }
+        userMapper.updateById(user);
         return current;
     }
 
@@ -84,10 +93,17 @@ public class UserServiceImpl implements UserService {
     public List<ContactUserDto> listContacts(String username) {
         User currentUser = getRequiredUser(username);
         List<FriendRelation> accepted = friendRelationMapper.selectList(new LambdaQueryWrapper<FriendRelation>()
-                .eq(FriendRelation::getStatus, REL_ACCEPTED)
-                .and(wrapper -> wrapper.eq(FriendRelation::getRequesterId, currentUser.getId())
+                .and(wrapper -> wrapper
+                        .eq(FriendRelation::getStatus, REL_ACCEPTED)
+                        .and(inner -> inner.eq(FriendRelation::getRequesterId, currentUser.getId())
+                                .or()
+                                .eq(FriendRelation::getAddresseeId, currentUser.getId()))
                         .or()
-                        .eq(FriendRelation::getAddresseeId, currentUser.getId())));
+                        .eq(FriendRelation::getStatus, REL_PENDING)
+                        .eq(FriendRelation::getRequesterId, currentUser.getId()))
+                .orderByDesc(FriendRelation::getUpdatedAt)
+                .orderByDesc(FriendRelation::getId));
+        Map<Long, String> relationStatusByUserId = new HashMap<>();
         Set<Long> friendIds = new HashSet<>();
         for (FriendRelation relation : accepted) {
             Long otherId = relation.getRequesterId().equals(currentUser.getId())
@@ -95,16 +111,83 @@ public class UserServiceImpl implements UserService {
                     : relation.getRequesterId();
             if (otherId != null) {
                 friendIds.add(otherId);
+                relationStatusByUserId.put(otherId, REL_ACCEPTED.equals(relation.getStatus()) ? "FRIEND" : "PENDING_SENT");
             }
         }
         if (friendIds.isEmpty()) {
             return List.of();
         }
+        Map<Long, String> latestMessageByUserId = new HashMap<>();
+        for (Long friendId : friendIds) {
+            latestMessageByUserId.put(friendId, findLatestConversationMessage(currentUser.getId(), friendId));
+        }
         return userMapper.selectBatchIds(friendIds).stream()
                 .filter(user -> user != null && user.getStatus() != null && user.getStatus() == 1)
-                .sorted((a, b) -> a.getUsername().compareToIgnoreCase(b.getUsername()))
-                .map(user -> new ContactUserDto(user.getId(), user.getUsername(), user.getNickname(), user.getAvatar()))
+                .sorted((a, b) -> compareContactUsers(a, b, relationStatusByUserId))
+                .map(user -> new ContactUserDto(
+                        user.getId(),
+                        user.getUsername(),
+                        user.getNickname(),
+                        user.getAvatar(),
+                        relationStatusByUserId.getOrDefault(user.getId(), "FRIEND"),
+                        latestMessageByUserId.get(user.getId())))
                 .toList();
+    }
+
+    private int compareContactUsers(User left, User right, Map<Long, String> relationStatusByUserId) {
+        int statusCompare = Integer.compare(
+                rankRelationStatus(relationStatusByUserId.getOrDefault(left.getId(), "FRIEND")),
+                rankRelationStatus(relationStatusByUserId.getOrDefault(right.getId(), "FRIEND")));
+        if (statusCompare != 0) {
+            return statusCompare;
+        }
+        return left.getUsername().compareToIgnoreCase(right.getUsername());
+    }
+
+    private int rankRelationStatus(String relationStatus) {
+        if ("FRIEND".equals(relationStatus)) {
+            return 0;
+        }
+        if ("PENDING_SENT".equals(relationStatus)) {
+            return 1;
+        }
+        return 2;
+    }
+
+    private String findLatestConversationMessage(Long currentUserId, Long otherUserId) {
+        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .and(wrapper -> wrapper
+                        .and(pair -> pair.eq(Message::getSenderId, currentUserId)
+                                .eq(Message::getReceiverId, otherUserId))
+                        .or(pair -> pair.eq(Message::getSenderId, otherUserId)
+                                .eq(Message::getReceiverId, currentUserId)))
+                .orderByDesc(Message::getCreatedAt)
+                .orderByDesc(Message::getId)
+                .last("LIMIT 1"));
+        if (messages.isEmpty()) {
+            return null;
+        }
+        return resolveLatestMessage(messages.get(0));
+    }
+
+    private String resolveLatestMessage(Message latest) {
+        if (latest == null) {
+            return null;
+        }
+        String mediaType = latest.getMediaType();
+        if (mediaType != null && !mediaType.isBlank() && !"TEXT".equalsIgnoreCase(mediaType)) {
+            if ("IMAGE".equalsIgnoreCase(mediaType)) {
+                return "[图片]";
+            }
+            if ("VIDEO".equalsIgnoreCase(mediaType)) {
+                return "[视频]";
+            }
+            if ("VOICE".equalsIgnoreCase(mediaType)) {
+                return "[语音]";
+            }
+            return "[文件]";
+        }
+        return latest.getContent();
     }
 
     @Override

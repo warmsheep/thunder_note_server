@@ -21,6 +21,10 @@ import java.util.List;
 
 @Service
 public class FavoriteServiceImpl implements FavoriteService {
+    private static final long COLLECTION_BOX_NOTE_ID = -1L;
+    private static final String COLLECTION_BOX_TITLE = "收集箱";
+    private static final String COLLECTION_BOX_ICON = "📥";
+
     private final UserMapper userMapper;
     private final MessageMapper messageMapper;
     private final FlashNoteMapper flashNoteMapper;
@@ -99,6 +103,11 @@ public class FavoriteServiceImpl implements FavoriteService {
         item.setFileSize(message.getFileSize());
         item.setMediaDuration(message.getMediaDuration());
         if (message.getFlashNoteId() != null) {
+            if (message.getFlashNoteId() == COLLECTION_BOX_NOTE_ID) {
+                item.setFlashNoteTitle(COLLECTION_BOX_TITLE);
+                item.setFlashNoteIcon(COLLECTION_BOX_ICON);
+                return item;
+            }
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
             if (flashNote != null && userId.equals(flashNote.getUserId())) {
                 item.setFlashNoteTitle(flashNote.getTitle());
