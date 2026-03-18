@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AuthServiceImpl implements AuthService {
+    private static final String SESSION_START_KEY_PREFIX = "auth:session:start:";
+
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
@@ -43,8 +45,11 @@ public class AuthServiceImpl implements AuthService {
         }
 
         String accessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
+        long sessionStartMillis = System.currentTimeMillis();
+        long refreshTtlSeconds = Math.max(1L, jwtUtil.getRefreshExpirationSeconds());
         String refreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername());
-        redisUtil.set(buildRefreshTokenKey(user.getId()), refreshToken, jwtUtil.getRefreshExpirationSeconds());
+        redisUtil.set(buildRefreshTokenKey(user.getId()), refreshToken, refreshTtlSeconds);
+        redisUtil.set(buildSessionStartKey(user.getId()), String.valueOf(sessionStartMillis), jwtUtil.getMaxSessionDurationMillis() / 1000);
 
         UserInfo userInfo = new UserInfo(
                 user.getId(),
@@ -93,14 +98,28 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Refresh token has expired");
         }
 
+        long sessionStartMillis = resolveSessionStartMillis(userId, refreshToken);
+        long now = System.currentTimeMillis();
+        long elapsed = Math.max(0L, now - sessionStartMillis);
+        long maxDuration = jwtUtil.getMaxSessionDurationMillis();
+        if (elapsed >= maxDuration) {
+            redisUtil.delete(buildRefreshTokenKey(userId));
+            redisUtil.delete(buildSessionStartKey(userId));
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "Session expired, please login again");
+        }
+
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "User does not exist");
         }
 
         String newAccessToken = jwtUtil.generateAccessToken(user.getId(), user.getUsername());
-        String newRefreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername());
-        redisUtil.set(buildRefreshTokenKey(userId), newRefreshToken, jwtUtil.getRefreshExpirationSeconds());
+        long remainingMillis = Math.max(1L, maxDuration - elapsed);
+        long refreshTtlMillis = Math.max(1L, Math.min(jwtUtil.getRefreshExpirationMillis(), remainingMillis));
+        long refreshTtlSeconds = Math.max(1L, refreshTtlMillis / 1000);
+        String newRefreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername(), refreshTtlMillis);
+        redisUtil.set(buildRefreshTokenKey(userId), newRefreshToken, refreshTtlSeconds);
+        redisUtil.set(buildSessionStartKey(userId), String.valueOf(sessionStartMillis), Math.max(1L, (maxDuration - elapsed) / 1000));
 
         UserInfo userInfo = new UserInfo(
                 user.getId(),
@@ -127,6 +146,7 @@ public class AuthServiceImpl implements AuthService {
         Long userId = jwtUtil.getUserId(token);
         if (userId != null) {
             redisUtil.delete(buildRefreshTokenKey(userId));
+            redisUtil.delete(buildSessionStartKey(userId));
         }
     }
 
@@ -146,5 +166,24 @@ public class AuthServiceImpl implements AuthService {
 
     private String buildRefreshTokenKey(Long userId) {
         return "auth:refresh:" + userId;
+    }
+
+    private String buildSessionStartKey(Long userId) {
+        return SESSION_START_KEY_PREFIX + userId;
+    }
+
+    private long resolveSessionStartMillis(Long userId, String refreshToken) {
+        String cachedStart = redisUtil.get(buildSessionStartKey(userId));
+        if (cachedStart != null) {
+            try {
+                long parsed = Long.parseLong(cachedStart);
+                if (parsed > 0L) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        long issuedAt = jwtUtil.getIssuedAtMillis(refreshToken);
+        return issuedAt > 0L ? issuedAt : System.currentTimeMillis();
     }
 }

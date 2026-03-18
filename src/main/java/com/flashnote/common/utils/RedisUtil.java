@@ -29,4 +29,9 @@ public class RedisUtil {
         Boolean exists = stringRedisTemplate.hasKey(key);
         return Boolean.TRUE.equals(exists);
     }
+
+    public long getExpireSeconds(String key) {
+        Long expire = stringRedisTemplate.getExpire(key, TimeUnit.SECONDS);
+        return expire == null ? -1L : expire;
+    }
 }

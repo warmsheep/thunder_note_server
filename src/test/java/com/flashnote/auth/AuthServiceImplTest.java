@@ -60,6 +60,7 @@ class AuthServiceImplTest {
         when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
         when(jwtUtil.generateAccessToken(1L, "alice")).thenReturn("access-token");
         when(jwtUtil.generateRefreshToken(1L, "alice")).thenReturn("refresh-token");
+        when(jwtUtil.getMaxSessionDurationMillis()).thenReturn(2592000000L);
         when(jwtUtil.getRefreshExpirationSeconds()).thenReturn(604800L);
         when(jwtUtil.getAccessExpirationSeconds()).thenReturn(3600L);
 
@@ -147,8 +148,10 @@ class AuthServiceImplTest {
         when(redisUtil.get(anyString())).thenReturn("valid-refresh-token");
         when(userMapper.selectById(1L)).thenReturn(user);
         when(jwtUtil.generateAccessToken(1L, "alice")).thenReturn("new-access-token");
-        when(jwtUtil.generateRefreshToken(1L, "alice")).thenReturn("new-refresh-token");
-        when(jwtUtil.getRefreshExpirationSeconds()).thenReturn(604800L);
+        when(redisUtil.get("auth:session:start:1")).thenReturn(String.valueOf(System.currentTimeMillis() - 1000));
+        when(jwtUtil.getMaxSessionDurationMillis()).thenReturn(2592000000L);
+        when(jwtUtil.getRefreshExpirationMillis()).thenReturn(604800000L);
+        when(jwtUtil.generateRefreshToken(eq(1L), eq("alice"), anyLong())).thenReturn("new-refresh-token");
         when(jwtUtil.getAccessExpirationSeconds()).thenReturn(3600L);
 
         LoginResponse response = authService.refreshToken("valid-refresh-token");
@@ -172,7 +175,7 @@ class AuthServiceImplTest {
 
         authService.logout("Bearer valid-access-token");
 
-        verify(redisUtil).delete(anyString());
+        verify(redisUtil, times(2)).delete(anyString());
     }
 
     @Test

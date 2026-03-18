@@ -26,6 +26,12 @@ public class JwtUtil {
     @Value("${security.jwt.refresh-expiration:604800000}")
     private long refreshExpiration;
 
+    @Value("${security.jwt.max-session-duration:2592000000}")
+    private long maxSessionDuration;
+
+    @Value("${security.jwt.auto-renew-threshold:86400000}")
+    private long autoRenewThreshold;
+
     @Value("${security.jwt.issuer:flashnote}")
     private String issuer;
 
@@ -42,6 +48,10 @@ public class JwtUtil {
 
     public String generateRefreshToken(Long userId, String username) {
         return generateToken(userId, username, "refresh", refreshExpiration);
+    }
+
+    public String generateRefreshToken(Long userId, String username, long expirationMs) {
+        return generateToken(userId, username, "refresh", expirationMs);
     }
 
     private String generateToken(Long userId, String username, String tokenType, long expirationMs) {
@@ -86,6 +96,23 @@ public class JwtUtil {
 
     public long getRefreshExpirationSeconds() {
         return refreshExpiration / 1000;
+    }
+
+    public long getRefreshExpirationMillis() {
+        return refreshExpiration;
+    }
+
+    public long getMaxSessionDurationMillis() {
+        return maxSessionDuration;
+    }
+
+    public long getAutoRenewThresholdMillis() {
+        return autoRenewThreshold;
+    }
+
+    public long getIssuedAtMillis(String token) {
+        Date issuedAt = parseClaims(token).getIssuedAt();
+        return issuedAt == null ? 0L : issuedAt.getTime();
     }
 
     private Claims parseClaims(String token) {

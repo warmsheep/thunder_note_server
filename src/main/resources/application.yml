@@ -41,6 +41,8 @@ security:
     issuer: thunder-note-server
     access-expiration: 3600000
     refresh-expiration: 604800000
+    max-session-duration: 2592000000
+    auto-renew-threshold: 86400000
 
 minio:
   endpoint: http://localhost:9000
