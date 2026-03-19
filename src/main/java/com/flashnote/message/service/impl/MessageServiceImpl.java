@@ -221,6 +221,8 @@ public class MessageServiceImpl implements MessageService {
             item.setThumbnailUrl(msg.getThumbnailUrl());
             item.setFileName(msg.getFileName());
             item.setFileSize(msg.getFileSize());
+            item.setSenderId(msg.getSenderId());
+            item.setRole(msg.getRole());
             items.add(item);
         }
         payload.setItems(items);

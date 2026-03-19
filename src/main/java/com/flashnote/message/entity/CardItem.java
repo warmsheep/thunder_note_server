@@ -8,6 +8,8 @@ public class CardItem {
     private String fileName;
     private Long fileSize;
     private Long originalMsgId;
+    private Long senderId;
+    private String role;
 
     public String getType() {
         return type;
@@ -63,5 +65,21 @@ public class CardItem {
 
     public void setOriginalMsgId(Long originalMsgId) {
         this.originalMsgId = originalMsgId;
+    }
+
+    public Long getSenderId() {
+        return senderId;
+    }
+
+    public void setSenderId(Long senderId) {
+        this.senderId = senderId;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 }
