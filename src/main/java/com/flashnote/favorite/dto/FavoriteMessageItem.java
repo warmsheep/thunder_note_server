@@ -1,5 +1,7 @@
 package com.flashnote.favorite.dto;
 
+import com.flashnote.message.entity.CardPayload;
+
 import java.time.LocalDateTime;
 
 public class FavoriteMessageItem {
@@ -17,6 +19,7 @@ public class FavoriteMessageItem {
     private Integer mediaDuration;
     private LocalDateTime messageCreatedAt;
     private LocalDateTime favoritedAt;
+    private CardPayload payload;
 
     public Long getId() {
         return id;
@@ -128,5 +131,13 @@ public class FavoriteMessageItem {
 
     public void setFavoritedAt(LocalDateTime favoritedAt) {
         this.favoritedAt = favoritedAt;
+    }
+
+    public CardPayload getPayload() {
+        return payload;
+    }
+
+    public void setPayload(CardPayload payload) {
+        this.payload = payload;
     }
 }

@@ -102,6 +102,7 @@ public class FavoriteServiceImpl implements FavoriteService {
         item.setFileName(message.getFileName());
         item.setFileSize(message.getFileSize());
         item.setMediaDuration(message.getMediaDuration());
+        item.setPayload(message.getPayload());
         if (message.getFlashNoteId() != null) {
             if (message.getFlashNoteId() == COLLECTION_BOX_NOTE_ID) {
                 item.setFlashNoteTitle(COLLECTION_BOX_TITLE);
