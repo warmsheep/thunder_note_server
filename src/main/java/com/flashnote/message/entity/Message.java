@@ -1,12 +1,14 @@
 package com.flashnote.message.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.flashnote.message.typehandler.CardPayloadJsonbTypeHandler;
 
 import java.time.LocalDateTime;
 
-@TableName("messages")
+@TableName(value = "messages", autoResultMap = true)
 public class Message {
     @TableId(type = IdType.AUTO)
     private Long id;
@@ -23,6 +25,17 @@ public class Message {
     private String thumbnailUrl;
     private String fileName;
     private Long fileSize;
+
+    @TableField(typeHandler = CardPayloadJsonbTypeHandler.class)
+    private CardPayload payload;
+
+    public CardPayload getPayload() {
+        return payload;
+    }
+
+    public void setPayload(CardPayload payload) {
+        this.payload = payload;
+    }
 
     public Long getId() {
         return id;

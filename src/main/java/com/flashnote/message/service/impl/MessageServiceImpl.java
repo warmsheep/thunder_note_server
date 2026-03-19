@@ -8,6 +8,8 @@ import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.file.service.FileService;
+import com.flashnote.message.entity.CardItem;
+import com.flashnote.message.entity.CardPayload;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
 import com.flashnote.message.service.MessageService;
@@ -16,9 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -140,6 +147,138 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
+    public Message mergeMessages(String username, com.flashnote.message.dto.MessageMergeRequest request) {
+        Long userId = getRequiredUserId(username);
+        if (request.getMessageIds() == null || request.getMessageIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "No messages to merge");
+        }
+        if (request.getMessageIds().size() > 50) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Cannot merge more than 50 messages");
+        }
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Title is required");
+        }
+        if (request.getFlashNoteId() == null && request.getReceiverId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Flash note or receiver is required");
+        }
+
+        Long targetFlashNoteId = request.getFlashNoteId();
+        Long targetReceiverId = request.getReceiverId();
+        if (targetFlashNoteId != null && targetFlashNoteId != COLLECTION_BOX_NOTE_ID) {
+            FlashNote flashNote = flashNoteMapper.selectById(targetFlashNoteId);
+            if (flashNote == null || !userId.equals(flashNote.getUserId())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
+            }
+        }
+        
+        List<Message> originalMessages = messageMapper.selectBatchIds(request.getMessageIds());
+        if (originalMessages.size() != request.getMessageIds().size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Some messages not found");
+        }
+
+        Map<Long, Integer> orderMap = new HashMap<>();
+        for (int i = 0; i < request.getMessageIds().size(); i++) {
+            orderMap.put(request.getMessageIds().get(i), i);
+        }
+        originalMessages = new ArrayList<>(originalMessages);
+        originalMessages.sort(Comparator.comparingInt(message -> orderMap.getOrDefault(message.getId(), Integer.MAX_VALUE)));
+
+        for (Message originalMessage : originalMessages) {
+            boolean relatedToCurrentUser = userId.equals(originalMessage.getSenderId()) || userId.equals(originalMessage.getReceiverId());
+            if (!relatedToCurrentUser) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "You can only merge your own conversation messages");
+            }
+
+            if (targetFlashNoteId != null) {
+                Long messageFlashNoteId = originalMessage.getFlashNoteId();
+                if (!java.util.Objects.equals(messageFlashNoteId, targetFlashNoteId)) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "All messages must belong to the same flash note");
+                }
+            } else {
+                boolean inTargetConversation = (userId.equals(originalMessage.getSenderId()) && targetReceiverId.equals(originalMessage.getReceiverId()))
+                        || (targetReceiverId.equals(originalMessage.getSenderId()) && userId.equals(originalMessage.getReceiverId()));
+                if (!inTargetConversation) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "All messages must belong to the same contact conversation");
+                }
+            }
+        }
+        
+        com.flashnote.message.entity.CardPayload payload = new com.flashnote.message.entity.CardPayload();
+        payload.setCardType("MESSAGE_COLLECTION");
+        payload.setTitle(request.getTitle());
+        
+        java.util.List<com.flashnote.message.entity.CardItem> items = new java.util.ArrayList<>();
+        for (Message msg : originalMessages) {
+            com.flashnote.message.entity.CardItem item = new com.flashnote.message.entity.CardItem();
+            item.setOriginalMsgId(msg.getId());
+            item.setContent(msg.getContent());
+            if (msg.getMediaType() != null) {
+                item.setType(msg.getMediaType());
+            } else {
+                item.setType("TEXT");
+            }
+            item.setUrl(msg.getMediaUrl());
+            item.setThumbnailUrl(msg.getThumbnailUrl());
+            item.setFileName(msg.getFileName());
+            item.setFileSize(msg.getFileSize());
+            items.add(item);
+        }
+        payload.setItems(items);
+        
+        String summary = "";
+        if (!items.isEmpty()) {
+            summary = items.get(0).getContent();
+            if (summary == null || summary.isEmpty()) {
+                summary = "[" + items.get(0).getType() + "]";
+            }
+            if (items.size() > 1) {
+                summary += " 等" + items.size() + "条消息";
+            }
+        }
+        payload.setSummary(summary);
+        
+        Message compositeMsg = new Message();
+        compositeMsg.setSenderId(userId);
+        Long receiverId = targetReceiverId;
+        if (targetFlashNoteId != null && targetFlashNoteId == COLLECTION_BOX_NOTE_ID) {
+            receiverId = userId;
+        } else if (receiverId == null) {
+            receiverId = userId;
+        }
+        compositeMsg.setReceiverId(receiverId);
+        compositeMsg.setFlashNoteId(targetFlashNoteId);
+        compositeMsg.setRole("user");
+        compositeMsg.setReadStatus(false);
+        compositeMsg.setMediaType("COMPOSITE");
+        compositeMsg.setContent(request.getTitle() != null && !request.getTitle().isEmpty() ? request.getTitle() : "[卡片消息]");
+        compositeMsg.setFileName(request.getTitle());
+        compositeMsg.setPayload(payload);
+        
+        messageMapper.insert(compositeMsg);
+        
+        if (compositeMsg.getFlashNoteId() != null && compositeMsg.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
+            FlashNote flashNote = flashNoteMapper.selectById(compositeMsg.getFlashNoteId());
+            if (flashNote != null && userId.equals(flashNote.getUserId())) {
+                flashNote.setContent(compositeMsg.getContent());
+                flashNoteMapper.updateById(flashNote);
+            }
+        }
+
+        SseEmitter receiverEmitter = emitterMap.get(compositeMsg.getReceiverId());
+        if (receiverEmitter != null) {
+            try {
+                receiverEmitter.send(SseEmitter.event()
+                        .name("message")
+                        .data(compositeMsg));
+            } catch (IOException ex) {
+                emitterMap.remove(compositeMsg.getReceiverId());
+            }
+        }
+        
+        return compositeMsg;
+    }
+
+    @Override
     public SseEmitter subscribe(String username) {
         Long userId = getRequiredUserId(username);
         SseEmitter emitter = new SseEmitter(0L);
@@ -188,13 +327,35 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private void deleteMediaIfNecessary(Message message) {
-        if (fileService == null || message == null || message.getMediaUrl() == null || message.getMediaUrl().isBlank()) {
+        if (fileService == null || message == null) {
             return;
         }
-        fileService.deleteObject(message.getMediaUrl());
-        if (message.getThumbnailUrl() != null && !message.getThumbnailUrl().isBlank()) {
-            fileService.deleteObject(message.getThumbnailUrl());
+
+        Set<String> objectsToDelete = new HashSet<>();
+        collectObjectName(objectsToDelete, message.getMediaUrl());
+        collectObjectName(objectsToDelete, message.getThumbnailUrl());
+
+        CardPayload payload = message.getPayload();
+        if (payload != null && payload.getItems() != null) {
+            for (CardItem item : payload.getItems()) {
+                if (item == null || item.getOriginalMsgId() != null) {
+                    continue;
+                }
+                collectObjectName(objectsToDelete, item.getUrl());
+                collectObjectName(objectsToDelete, item.getThumbnailUrl());
+            }
         }
+
+        for (String objectName : objectsToDelete) {
+            fileService.deleteObject(objectName);
+        }
+    }
+
+    private void collectObjectName(Set<String> objectNames, String objectName) {
+        if (objectName == null || objectName.isBlank()) {
+            return;
+        }
+        objectNames.add(objectName);
     }
 
     @Override

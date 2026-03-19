@@ -42,6 +42,11 @@ public class MessageController {
         return ApiResponse.success(messageService.sendMessage(authentication.getName(), message));
     }
 
+    @PostMapping("/merge")
+    public ApiResponse<Message> merge(Authentication authentication, @RequestBody com.flashnote.message.dto.MessageMergeRequest request) {
+        return ApiResponse.success(messageService.mergeMessages(authentication.getName(), request));
+    }
+
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(Authentication authentication) {
         return messageService.subscribe(authentication.getName());
