@@ -63,6 +63,7 @@ public class MessageServiceImpl implements MessageService {
                         .eq(Message::getSenderId, userId)
                         .or()
                         .eq(Message::getReceiverId, userId))
+                .orderByDesc(Message::getCreatedAt)
                 .orderByDesc(Message::getId);
 
         if (flashNoteId != null) {
