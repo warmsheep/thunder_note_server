@@ -16,6 +16,9 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.ModelAndView;
 
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Array;
@@ -140,6 +143,13 @@ public class ApiLoggingAspect {
     }
 
     private String toJson(Object value) {
+        if (value instanceof ResponseEntity<?> responseEntity) {
+            Object body = responseEntity.getBody();
+            if (body instanceof Resource) {
+                return "<" + responseEntity.getStatusCode() + ", stream body, "
+                        + responseEntity.getHeaders() + ">";
+            }
+        }
         try {
             return truncate(objectMapper.writeValueAsString(value));
         } catch (JsonProcessingException e) {

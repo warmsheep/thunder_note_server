@@ -3,7 +3,8 @@ package com.flashnote.file.controller;
 import com.flashnote.common.response.ApiResponse;
 import com.flashnote.file.dto.FileUploadResult;
 import com.flashnote.file.service.FileService;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLConnection;
 
 @RestController
 @RequestMapping("/api/files")
@@ -31,11 +36,39 @@ public class FileController {
     }
 
     @GetMapping("/download")
-    public ResponseEntity<InputStreamResource> download(@RequestParam("objectName") String objectName) {
-        InputStreamResource resource = new InputStreamResource(fileService.download(objectName));
+    public ResponseEntity<Resource> download(@RequestParam("objectName") String objectName) throws IOException {
+        byte[] data;
+        try (InputStream stream = fileService.download(objectName)) {
+            data = stream.readAllBytes();
+        }
+
+        MediaType contentType = guessMediaType(objectName);
+        ByteArrayResource resource = new ByteArrayResource(data);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + objectName + "\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(contentType)
+                .contentLength(data.length)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + extractFileName(objectName) + "\"")
                 .body(resource);
+    }
+
+    private MediaType guessMediaType(String objectName) {
+        String mimeType = URLConnection.guessContentTypeFromName(objectName);
+        if (mimeType != null) {
+            try {
+                return MediaType.parseMediaType(mimeType);
+            } catch (Exception ignored) {
+            }
+        }
+        return MediaType.APPLICATION_OCTET_STREAM;
+    }
+
+    private String extractFileName(String objectName) {
+        if (objectName == null) {
+            return "file";
+        }
+        int lastSlash = objectName.lastIndexOf('/');
+        return lastSlash >= 0 && lastSlash < objectName.length() - 1
+                ? objectName.substring(lastSlash + 1)
+                : objectName;
     }
 }
