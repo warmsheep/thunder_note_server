@@ -21,6 +21,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -28,6 +29,26 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MessageServiceImplTest {
+
+    @Test
+    void sendMessagePreservesClientRequestId() {
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        UserMapper userMapper = mock(UserMapper.class);
+        FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
+
+        when(userMapper.selectOne(any())).thenReturn(buildUser(1L, "alice"));
+
+        MessageServiceImpl service = new MessageServiceImpl(messageMapper, userMapper, flashNoteMapper);
+        Message message = new Message();
+        message.setContent("hello");
+        message.setClientRequestId("req-123");
+
+        Message result = service.sendMessage("alice", message);
+
+        assertSame(message, result);
+        assertEquals("req-123", result.getClientRequestId());
+        verify(messageMapper).insert(message);
+    }
 
     @Test
     void sendMessageRejectsForeignFlashNote() {

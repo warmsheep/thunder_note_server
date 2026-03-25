@@ -17,6 +17,7 @@ public class Message {
     private String content;
     private Boolean readStatus;
     private Long flashNoteId;
+    private String clientRequestId;
     private String role;
     private LocalDateTime createdAt;
     private String mediaType;
@@ -83,6 +84,14 @@ public class Message {
 
     public void setFlashNoteId(Long flashNoteId) {
         this.flashNoteId = flashNoteId;
+    }
+
+    public String getClientRequestId() {
+        return clientRequestId;
+    }
+
+    public void setClientRequestId(String clientRequestId) {
+        this.clientRequestId = clientRequestId;
     }
 
     public String getRole() {
