@@ -119,6 +119,7 @@ public class MessageServiceImpl implements MessageService {
                     case "VIDEO": message.setContent("[视频]"); break;
                     case "VOICE": message.setContent("[语音]"); break;
                     case "FILE": message.setContent("[文件]"); break;
+                    case "COMPOSITE": message.setContent("[卡片消息]"); break;
                     default: message.setContent(""); break;
                 }
             } else {
@@ -327,6 +328,49 @@ public class MessageServiceImpl implements MessageService {
         deleteMediaIfNecessary(message);
         
         messageMapper.deleteById(messageId);
+    }
+
+    @Override
+    public void deleteMessages(String username, List<Long> messageIds) {
+        Long userId = getRequiredUserId(username);
+        if (messageIds == null || messageIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "No messages selected");
+        }
+        if (messageIds.size() > 50) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Cannot delete more than 50 messages");
+        }
+        List<Message> messages = messageMapper.selectBatchIds(messageIds);
+        if (messages.size() != messageIds.size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Some messages not found");
+        }
+        for (Message message : messages) {
+            boolean isOwner = message.getSenderId() != null && message.getSenderId().equals(userId);
+            boolean isReceiver = message.getReceiverId() != null && message.getReceiverId().equals(userId);
+            if (!isOwner && !isReceiver) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "You can only delete your own messages");
+            }
+            deleteMediaIfNecessary(message);
+        }
+        messageMapper.delete(new LambdaQueryWrapper<Message>().in(Message::getId, messageIds));
+    }
+
+    @Override
+    public void clearInboxMessages(String username) {
+        Long userId = getRequiredUserId(username);
+        List<Message> inboxMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+                .eq(Message::getSenderId, userId)
+                .eq(Message::getReceiverId, userId));
+        if (inboxMessages.isEmpty()) {
+            return;
+        }
+        for (Message message : inboxMessages) {
+            deleteMediaIfNecessary(message);
+        }
+        messageMapper.delete(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+                .eq(Message::getSenderId, userId)
+                .eq(Message::getReceiverId, userId));
     }
 
     private void deleteMediaIfNecessary(Message message) {

@@ -17,5 +17,9 @@ public interface MessageService {
 
     void deleteMessage(String username, Long messageId);
 
+    void deleteMessages(String username, List<Long> messageIds);
+
+    void clearInboxMessages(String username);
+
     Long countMessages(String username);
 }

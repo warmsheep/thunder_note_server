@@ -1,6 +1,7 @@
 package com.flashnote.message.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.message.dto.MessageBatchDeleteRequest;
 import com.flashnote.message.dto.MessageListRequest;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.service.MessageService;
@@ -56,6 +57,19 @@ public class MessageController {
     public ApiResponse<Void> delete(Authentication authentication, @PathVariable Long id) {
         messageService.deleteMessage(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
+    }
+
+    @PostMapping("/delete-batch")
+    public ApiResponse<Void> deleteBatch(Authentication authentication,
+                                         @RequestBody(required = false) MessageBatchDeleteRequest request) {
+        messageService.deleteMessages(authentication.getName(), request == null ? null : request.getIds());
+        return ApiResponse.success("Deleted", null);
+    }
+
+    @DeleteMapping("/clear-inbox")
+    public ApiResponse<Void> clearInbox(Authentication authentication) {
+        messageService.clearInboxMessages(authentication.getName());
+        return ApiResponse.success("Cleared", null);
     }
 
     @GetMapping("/count")
