@@ -2,6 +2,7 @@ package com.flashnote.auth.controller;
 
 import com.flashnote.auth.dto.LoginRequest;
 import com.flashnote.auth.dto.LoginResponse;
+import com.flashnote.auth.dto.RefreshTokenRequest;
 import com.flashnote.auth.dto.RegisterRequest;
 import com.flashnote.auth.dto.ChangePasswordRequest;
 import com.flashnote.auth.service.AuthService;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -38,8 +38,8 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ApiResponse<LoginResponse> refreshToken(@RequestParam("refreshToken") String refreshToken) {
-        return ApiResponse.success(authService.refreshToken(refreshToken));
+    public ApiResponse<LoginResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        return ApiResponse.success(authService.refreshToken(request.getRefreshToken()));
     }
 
     @PostMapping("/logout")
