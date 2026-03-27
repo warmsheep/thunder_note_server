@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class MessageServiceImpl implements MessageService {
     private static final long COLLECTION_BOX_NOTE_ID = -1L;
+    private static final long SSE_TIMEOUT_MILLIS = 30_000L;
 
     private final MessageMapper messageMapper;
     private final UserMapper userMapper;
@@ -285,11 +286,17 @@ public class MessageServiceImpl implements MessageService {
     @Override
     public SseEmitter subscribe(String username) {
         Long userId = getRequiredUserId(username);
-        SseEmitter emitter = new SseEmitter(0L);
-        emitterMap.put(userId, emitter);
-        emitter.onCompletion(() -> emitterMap.remove(userId));
-        emitter.onTimeout(() -> emitterMap.remove(userId));
-        emitter.onError(error -> emitterMap.remove(userId));
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
+        SseEmitter previousEmitter = emitterMap.put(userId, emitter);
+        if (previousEmitter != null) {
+            previousEmitter.complete();
+        }
+        emitter.onCompletion(() -> emitterMap.remove(userId, emitter));
+        emitter.onTimeout(() -> {
+            emitterMap.remove(userId, emitter);
+            emitter.complete();
+        });
+        emitter.onError(error -> emitterMap.remove(userId, emitter));
 
         try {
             emitter.send(SseEmitter.event().name("connected").data("connected"));

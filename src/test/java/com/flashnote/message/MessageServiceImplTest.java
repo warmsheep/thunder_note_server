@@ -14,14 +14,18 @@ import com.flashnote.message.mapper.MessageMapper;
 import com.flashnote.message.service.impl.MessageServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -29,6 +33,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MessageServiceImplTest {
+
+    @Test
+    void subscribeUsesFiniteTimeoutAndKeepsLatestEmitter() throws Exception {
+        MessageServiceImpl service = new MessageServiceImpl(mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class));
+
+        SseEmitter first = service.subscribe("alice");
+        SseEmitter second = service.subscribe("alice");
+
+        assertEquals(30000L, first.getTimeout());
+        assertEquals(30000L, second.getTimeout());
+        assertSame(second, currentEmitter(service, 1L));
+    }
 
     @Test
     void sendMessagePreservesClientRequestId() {
@@ -224,5 +240,13 @@ class MessageServiceImplTest {
         message.setMediaType(mediaType);
         message.setContent(content);
         return message;
+    }
+
+    private SseEmitter currentEmitter(MessageServiceImpl service, Long userId) throws Exception {
+        Field emitterMapField = MessageServiceImpl.class.getDeclaredField("emitterMap");
+        emitterMapField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<Long, SseEmitter> emitterMap = (Map<Long, SseEmitter>) emitterMapField.get(service);
+        return emitterMap.get(userId);
     }
 }
