@@ -15,6 +15,11 @@ public class User {
     private String password;
     private String nickname;
     private String avatar;
+    private String gestureLockCiphertext;
+    private String gestureLockNonce;
+    private String gestureLockKdfParams;
+    private String gestureLockVersion;
+    private LocalDateTime gestureLockUpdatedAt;
     private Integer status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -65,6 +70,46 @@ public class User {
 
     public void setAvatar(String avatar) {
         this.avatar = avatar;
+    }
+
+    public String getGestureLockCiphertext() {
+        return gestureLockCiphertext;
+    }
+
+    public void setGestureLockCiphertext(String gestureLockCiphertext) {
+        this.gestureLockCiphertext = gestureLockCiphertext;
+    }
+
+    public String getGestureLockNonce() {
+        return gestureLockNonce;
+    }
+
+    public void setGestureLockNonce(String gestureLockNonce) {
+        this.gestureLockNonce = gestureLockNonce;
+    }
+
+    public String getGestureLockKdfParams() {
+        return gestureLockKdfParams;
+    }
+
+    public void setGestureLockKdfParams(String gestureLockKdfParams) {
+        this.gestureLockKdfParams = gestureLockKdfParams;
+    }
+
+    public String getGestureLockVersion() {
+        return gestureLockVersion;
+    }
+
+    public void setGestureLockVersion(String gestureLockVersion) {
+        this.gestureLockVersion = gestureLockVersion;
+    }
+
+    public LocalDateTime getGestureLockUpdatedAt() {
+        return gestureLockUpdatedAt;
+    }
+
+    public void setGestureLockUpdatedAt(LocalDateTime gestureLockUpdatedAt) {
+        this.gestureLockUpdatedAt = gestureLockUpdatedAt;
     }
 
     public Integer getStatus() {

@@ -5,6 +5,8 @@ import com.flashnote.auth.dto.LoginRequest;
 import com.flashnote.auth.dto.LoginResponse;
 import com.flashnote.auth.dto.RegisterRequest;
 import com.flashnote.auth.dto.ChangePasswordRequest;
+import com.flashnote.auth.dto.GestureLockBackupRequest;
+import com.flashnote.auth.dto.GestureLockBackupResponse;
 import com.flashnote.auth.dto.UserInfo;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
@@ -15,6 +17,8 @@ import com.flashnote.common.utils.JwtUtil;
 import com.flashnote.common.utils.RedisUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -152,15 +156,40 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void changePassword(String username, ChangePasswordRequest request) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
-                .eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
+        User user = requireUser(username);
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Current password is incorrect");
         }
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userMapper.updateById(user);
+    }
+
+    @Override
+    public void saveGestureLockBackup(String username, GestureLockBackupRequest request) {
+        User user = requireUser(username);
+        user.setGestureLockCiphertext(request.getCiphertext());
+        user.setGestureLockNonce(request.getNonce());
+        user.setGestureLockKdfParams(request.getKdfParams());
+        user.setGestureLockVersion(request.getVersion());
+        user.setGestureLockUpdatedAt(LocalDateTime.now());
+        userMapper.updateById(user);
+    }
+
+    @Override
+    public GestureLockBackupResponse getGestureLockBackup(String username) {
+        User user = requireUser(username);
+        boolean configured = user.getGestureLockCiphertext() != null && !user.getGestureLockCiphertext().isBlank();
+        return new GestureLockBackupResponse(configured, user.getGestureLockVersion(), user.getGestureLockUpdatedAt());
+    }
+
+    @Override
+    public void clearGestureLockBackup(String username) {
+        User user = requireUser(username);
+        user.setGestureLockCiphertext(null);
+        user.setGestureLockNonce(null);
+        user.setGestureLockKdfParams(null);
+        user.setGestureLockVersion(null);
+        user.setGestureLockUpdatedAt(null);
         userMapper.updateById(user);
     }
 
@@ -170,6 +199,15 @@ public class AuthServiceImpl implements AuthService {
 
     private String buildSessionStartKey(Long userId) {
         return SESSION_START_KEY_PREFIX + userId;
+    }
+
+    private User requireUser(String username) {
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getUsername, username));
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
+        }
+        return user;
     }
 
     private long resolveSessionStartMillis(Long userId, String refreshToken) {

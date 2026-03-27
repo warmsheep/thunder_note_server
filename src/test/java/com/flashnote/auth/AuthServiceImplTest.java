@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flashnote.auth.dto.LoginRequest;
 import com.flashnote.auth.dto.LoginResponse;
 import com.flashnote.auth.dto.RegisterRequest;
+import com.flashnote.auth.dto.GestureLockBackupRequest;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.auth.service.impl.AuthServiceImpl;
@@ -182,5 +183,49 @@ class AuthServiceImplTest {
     void logout_withNullToken_doesNothing() {
         assertDoesNotThrow(() -> authService.logout(null));
         verifyNoInteractions(redisUtil);
+    }
+
+    @Test
+    void saveGestureLockBackup_updatesBackupFields() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(user);
+
+        GestureLockBackupRequest request = new GestureLockBackupRequest();
+        request.setCiphertext("ciphertext");
+        request.setNonce("nonce");
+        request.setKdfParams("params");
+        request.setVersion("v1");
+
+        authService.saveGestureLockBackup("alice", request);
+
+        assertEquals("ciphertext", user.getGestureLockCiphertext());
+        assertEquals("nonce", user.getGestureLockNonce());
+        assertEquals("params", user.getGestureLockKdfParams());
+        assertEquals("v1", user.getGestureLockVersion());
+        assertNotNull(user.getGestureLockUpdatedAt());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void clearGestureLockBackup_clearsStoredFields() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setGestureLockCiphertext("ciphertext");
+        user.setGestureLockNonce("nonce");
+        user.setGestureLockKdfParams("params");
+        user.setGestureLockVersion("v1");
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(user);
+
+        authService.clearGestureLockBackup("alice");
+
+        assertNull(user.getGestureLockCiphertext());
+        assertNull(user.getGestureLockNonce());
+        assertNull(user.getGestureLockKdfParams());
+        assertNull(user.getGestureLockVersion());
+        assertNull(user.getGestureLockUpdatedAt());
+        verify(userMapper).updateById(user);
     }
 }

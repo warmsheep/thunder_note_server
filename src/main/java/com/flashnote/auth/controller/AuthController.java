@@ -5,12 +5,16 @@ import com.flashnote.auth.dto.LoginResponse;
 import com.flashnote.auth.dto.RefreshTokenRequest;
 import com.flashnote.auth.dto.RegisterRequest;
 import com.flashnote.auth.dto.ChangePasswordRequest;
+import com.flashnote.auth.dto.GestureLockBackupRequest;
+import com.flashnote.auth.dto.GestureLockBackupResponse;
 import com.flashnote.auth.service.AuthService;
 import com.flashnote.common.response.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,8 +55,26 @@ public class AuthController {
 
     @PutMapping("/password")
     public ApiResponse<Void> changePassword(Authentication authentication,
-                                         @Valid @RequestBody ChangePasswordRequest request) {
+                                          @Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(authentication.getName(), request);
         return ApiResponse.success("Password changed", null);
+    }
+
+    @PutMapping("/gesture-lock")
+    public ApiResponse<Void> saveGestureLockBackup(Authentication authentication,
+                                                   @Valid @RequestBody GestureLockBackupRequest request) {
+        authService.saveGestureLockBackup(authentication.getName(), request);
+        return ApiResponse.success("Gesture lock backup saved", null);
+    }
+
+    @GetMapping("/gesture-lock")
+    public ApiResponse<GestureLockBackupResponse> getGestureLockBackup(Authentication authentication) {
+        return ApiResponse.success(authService.getGestureLockBackup(authentication.getName()));
+    }
+
+    @DeleteMapping("/gesture-lock")
+    public ApiResponse<Void> clearGestureLockBackup(Authentication authentication) {
+        authService.clearGestureLockBackup(authentication.getName());
+        return ApiResponse.success("Gesture lock backup cleared", null);
     }
 }
