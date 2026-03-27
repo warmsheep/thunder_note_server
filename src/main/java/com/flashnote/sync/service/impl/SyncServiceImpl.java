@@ -20,6 +20,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,18 +58,22 @@ public class SyncServiceImpl implements SyncService {
     }
 
     @Override
-    public Map<String, Object> pull(String username) {
+    public Map<String, Object> pull(String username, String lastMessageCreatedAt) {
         Map<String, Object> result = new HashMap<>();
         Long userId = getUserId(username);
         result.put("profile", userService.getProfile(username));
         result.put("notes", flashNoteService.listNotes(username));
         result.put("collections", collectionService.listCollections(username));
-        result.put("messages", messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        LambdaQueryWrapper<Message> messageQuery = new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
                         .eq(Message::getSenderId, userId)
                         .or()
                         .eq(Message::getReceiverId, userId))
-                .orderByAsc(Message::getCreatedAt)));
+                .orderByAsc(Message::getCreatedAt);
+        if (lastMessageCreatedAt != null && !lastMessageCreatedAt.isBlank()) {
+            messageQuery.gt(Message::getCreatedAt, LocalDateTime.parse(lastMessageCreatedAt));
+        }
+        result.put("messages", messageMapper.selectList(messageQuery));
         result.put("favorites", favoriteService.listFavorites(username));
         result.put("serverTime", Instant.now().toString());
         return result;
@@ -204,12 +209,21 @@ public class SyncServiceImpl implements SyncService {
         int count = 0;
         for (Map<String, Object> messageData : messages) {
             Object idObj = messageData.get("id");
-            if (idObj == null) {
-                continue;
+            String clientRequestId = stringValue(messageData.get("clientRequestId"));
+            Long messageId = idObj instanceof Number ? ((Number) idObj).longValue() : null;
+
+            Message existing = null;
+            if (messageId != null) {
+                existing = messageMapper.selectById(messageId);
             }
-            Long messageId = ((Number) idObj).longValue();
-            
-            Message existing = messageMapper.selectById(messageId);
+            if (existing == null && clientRequestId != null && !clientRequestId.isBlank()) {
+                existing = messageMapper.selectOne(new LambdaQueryWrapper<Message>()
+                        .eq(Message::getClientRequestId, clientRequestId)
+                        .and(wrapper -> wrapper
+                                .eq(Message::getSenderId, userId)
+                                .or()
+                                .eq(Message::getReceiverId, userId)));
+            }
 
             if (existing != null) {
                 if (!userId.equals(existing.getSenderId()) && !userId.equals(existing.getReceiverId())) {
@@ -231,19 +245,39 @@ public class SyncServiceImpl implements SyncService {
                 if (messageData.get("role") != null) {
                     existing.setRole((String) messageData.get("role"));
                 }
+                if (clientRequestId != null && !clientRequestId.isBlank()) {
+                    existing.setClientRequestId(clientRequestId);
+                }
                 messageMapper.updateById(existing);
             } else {
                 Message message = new Message();
-                message.setId(messageId);
-                message.setSenderId(userId);
+                if (messageId != null) {
+                    message.setId(messageId);
+                }
+                Object senderIdObj = messageData.get("senderId");
+                if (senderIdObj instanceof Number senderIdNumber) {
+                    message.setSenderId(senderIdNumber.longValue());
+                } else {
+                    message.setSenderId(userId);
+                }
                 Object receiverIdObj = messageData.get("receiver_id");
+                if (receiverIdObj == null) {
+                    receiverIdObj = messageData.get("receiverId");
+                }
                 if (receiverIdObj != null) {
                     message.setReceiverId(((Number) receiverIdObj).longValue());
                 } else {
                     message.setReceiverId(userId);
                 }
+                if (clientRequestId != null && !clientRequestId.isBlank()) {
+                    message.setClientRequestId(clientRequestId);
+                }
                 message.setContent((String) messageData.get("content"));
                 message.setReadStatus(messageData.get("read_status") != null ? (Boolean) messageData.get("read_status") : false);
+                Object readStatusValue = messageData.get("readStatus");
+                if (readStatusValue instanceof Boolean readStatus) {
+                    message.setReadStatus(readStatus);
+                }
                 Object flashNoteIdValue = messageData.get("flash_note_id");
                 if (flashNoteIdValue == null) {
                     flashNoteIdValue = messageData.get("flashNoteId");
@@ -256,11 +290,43 @@ public class SyncServiceImpl implements SyncService {
                 } else {
                     message.setRole("user");
                 }
+                if (messageData.get("mediaType") != null) {
+                    message.setMediaType((String) messageData.get("mediaType"));
+                }
+                if (messageData.get("mediaUrl") != null) {
+                    message.setMediaUrl((String) messageData.get("mediaUrl"));
+                }
+                Object mediaDurationValue = messageData.get("mediaDuration");
+                if (mediaDurationValue instanceof Number mediaDuration) {
+                    message.setMediaDuration(mediaDuration.intValue());
+                }
+                if (messageData.get("thumbnailUrl") != null) {
+                    message.setThumbnailUrl((String) messageData.get("thumbnailUrl"));
+                }
+                if (messageData.get("fileName") != null) {
+                    message.setFileName((String) messageData.get("fileName"));
+                }
+                Object fileSizeValue = messageData.get("fileSize");
+                if (fileSizeValue instanceof Number fileSize) {
+                    message.setFileSize(fileSize.longValue());
+                }
+                Object createdAtValue = messageData.get("createdAt");
+                if (createdAtValue instanceof String createdAt && !createdAt.isBlank()) {
+                    message.setCreatedAt(LocalDateTime.parse(createdAt));
+                }
                 messageMapper.insert(message);
             }
             count++;
         }
         return count;
+    }
+
+    private String stringValue(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String stringValue = String.valueOf(rawValue).trim();
+        return stringValue.isEmpty() ? null : stringValue;
     }
 
     private int processFavorites(Long userId, List<Map<String, Object>> favorites) {
@@ -310,7 +376,7 @@ public class SyncServiceImpl implements SyncService {
 
     @Override
     public Map<String, Object> bootstrap(String username) {
-        Map<String, Object> result = pull(username);
+        Map<String, Object> result = pull(username, null);
         result.put("bootstrap", true);
         return result;
     }

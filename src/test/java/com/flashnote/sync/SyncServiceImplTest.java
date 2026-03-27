@@ -22,7 +22,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -64,7 +66,7 @@ class SyncServiceImplTest {
                 favoriteService
         );
 
-        Map<String, Object> result = syncService.pull("alice");
+        Map<String, Object> result = syncService.pull("alice", null);
 
         assertTrue(result.containsKey("favorites"));
     }
@@ -254,5 +256,55 @@ class SyncServiceImplTest {
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");
 
         assertEquals(1, processed.get("favorites"));
+    }
+
+    @Test
+    void pushInsertsMessageWhenClientRequestIdIsNewEvenWithoutServerId() {
+        FlashNoteService flashNoteService = mock(FlashNoteService.class);
+        CollectionService collectionService = mock(CollectionService.class);
+        UserService userService = mock(UserService.class);
+        UserMapper userMapper = mock(UserMapper.class);
+        FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
+        CollectionMapper collectionMapper = mock(CollectionMapper.class);
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        FavoriteMessageMapper favoriteMessageMapper = mock(FavoriteMessageMapper.class);
+        FavoriteService favoriteService = mock(FavoriteService.class);
+
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(userMapper.selectOne(any())).thenReturn(user);
+        when(messageMapper.selectById(any())).thenReturn(null);
+        when(messageMapper.selectOne(any())).thenReturn(null);
+
+        SyncServiceImpl syncService = new SyncServiceImpl(
+                flashNoteService,
+                collectionService,
+                userService,
+                userMapper,
+                flashNoteMapper,
+                collectionMapper,
+                messageMapper,
+                favoriteMessageMapper,
+                favoriteService
+        );
+
+        Map<String, Object> payload = Map.of(
+                "notes", List.of(),
+                "collections", List.of(),
+                "messages", List.of(Map.of(
+                        "clientRequestId", "client-1",
+                        "flashNoteId", 9L,
+                        "content", "hello",
+                        "createdAt", "2026-03-27T10:00:00"
+                )),
+                "favorites", List.of()
+        );
+
+        Map<String, Object> result = syncService.push("alice", payload);
+        Map<?, ?> processed = (Map<?, ?>) result.get("processed");
+
+        assertEquals(1, processed.get("messages"));
+        verify(messageMapper).insert(argThat(message -> "client-1".equals(message.getClientRequestId()) && Long.valueOf(9L).equals(message.getFlashNoteId())));
     }
 }

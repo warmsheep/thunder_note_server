@@ -1,6 +1,7 @@
 package com.flashnote.sync.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.sync.dto.SyncPullRequest;
 import com.flashnote.sync.service.SyncService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,8 +21,9 @@ public class SyncController {
     }
 
     @PostMapping("/pull")
-    public ApiResponse<Map<String, Object>> pull(Authentication authentication) {
-        return ApiResponse.success(syncService.pull(authentication.getName()));
+    public ApiResponse<Map<String, Object>> pull(Authentication authentication,
+                                                 @RequestBody(required = false) SyncPullRequest request) {
+        return ApiResponse.success(syncService.pull(authentication.getName(), request == null ? null : request.getLastMessageCreatedAt()));
     }
 
     @PostMapping("/push")
