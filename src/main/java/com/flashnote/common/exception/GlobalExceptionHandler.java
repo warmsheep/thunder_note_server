@@ -53,7 +53,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ApiResponse<Void> handleException(Exception ex) {
         log.error("服务器内部错误", ex);
-        ApiResponse<Void> response = ApiResponse.error(ErrorCode.INTERNAL_ERROR.getCode(), ex.getMessage());
+        ApiResponse<Void> response = ApiResponse.error(ErrorCode.INTERNAL_ERROR.getCode(), "Internal server error");
         logApiErrorResponse(response);
         return response;
     }

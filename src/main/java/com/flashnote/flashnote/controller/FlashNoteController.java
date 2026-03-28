@@ -1,19 +1,22 @@
 package com.flashnote.flashnote.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.flashnote.dto.FlashNoteCreateRequest;
 import com.flashnote.flashnote.dto.FlashNoteSearchRequest;
 import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
-import com.flashnote.flashnote.dto.FlashNoteSearchResult;
+import com.flashnote.flashnote.dto.FlashNoteUpdateRequest;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.service.FlashNoteService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -40,33 +43,35 @@ public class FlashNoteController {
     }
 
     @PostMapping
-    public ApiResponse<FlashNote> create(Authentication authentication, @RequestBody FlashNote note) {
-        return ApiResponse.success(flashNoteService.createNote(authentication.getName(), note));
+    public ApiResponse<FlashNote> create(Authentication authentication,
+                                       @Valid @RequestBody FlashNoteCreateRequest request) {
+        return ApiResponse.success(flashNoteService.createNote(authentication.getName(), request));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<FlashNote> update(Authentication authentication,
-                                         @PathVariable Long id,
-                                         @RequestBody FlashNote note) {
-        return ApiResponse.success(flashNoteService.updateNote(authentication.getName(), id, note));
+                                         @PathVariable @Positive Long id,
+                                         @Valid @RequestBody FlashNoteUpdateRequest request) {
+        return ApiResponse.success(flashNoteService.updateNote(authentication.getName(), id, request));
     }
 
     @PutMapping("/{id}/pin")
     public ApiResponse<FlashNote> setPinned(Authentication authentication,
-                                            @PathVariable Long id,
-                                            @RequestParam(defaultValue = "true") boolean value) {
+                                             @PathVariable @Positive Long id,
+                                             @RequestParam(defaultValue = "true") boolean value) {
         return ApiResponse.success(flashNoteService.setPinned(authentication.getName(), id, value));
     }
 
     @PutMapping("/{id}/hide")
     public ApiResponse<FlashNote> setHidden(Authentication authentication,
-                                            @PathVariable Long id,
-                                            @RequestParam(defaultValue = "true") boolean value) {
+                                             @PathVariable @Positive Long id,
+                                             @RequestParam(defaultValue = "true") boolean value) {
         return ApiResponse.success(flashNoteService.setHidden(authentication.getName(), id, value));
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(Authentication authentication, @PathVariable Long id) {
+    public ApiResponse<Void> delete(Authentication authentication,
+                                   @PathVariable @Positive Long id) {
         flashNoteService.deleteNote(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
     }

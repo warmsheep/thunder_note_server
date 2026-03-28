@@ -13,6 +13,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.util.List;
 
 @Component
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtUtil jwtUtil;
     private final UserMapper userMapper;
@@ -104,7 +106,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 if (parsed > 0L) {
                     return parsed;
                 }
-            } catch (NumberFormatException ignored) {
+            } catch (NumberFormatException e) {
+                log.debug("Invalid session start value in Redis for userId={}: {}", userId, cachedStart);
             }
         }
         long issuedAt = jwtUtil.getIssuedAtMillis(refreshToken);

@@ -3,6 +3,7 @@ package com.flashnote.favorite.controller;
 import com.flashnote.common.response.ApiResponse;
 import com.flashnote.favorite.dto.FavoriteMessageItem;
 import com.flashnote.favorite.service.FavoriteService;
+import jakarta.validation.constraints.Positive;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,12 +28,14 @@ public class FavoriteController {
     }
 
     @PostMapping("/{messageId}")
-    public ApiResponse<FavoriteMessageItem> create(Authentication authentication, @PathVariable Long messageId) {
+    public ApiResponse<FavoriteMessageItem> create(Authentication authentication,
+                                               @PathVariable @Positive Long messageId) {
         return ApiResponse.success(favoriteService.addFavorite(authentication.getName(), messageId));
     }
 
     @DeleteMapping("/{messageId}")
-    public ApiResponse<Void> delete(Authentication authentication, @PathVariable Long messageId) {
+    public ApiResponse<Void> delete(Authentication authentication,
+                                   @PathVariable @Positive Long messageId) {
         favoriteService.removeFavorite(authentication.getName(), messageId);
         return ApiResponse.success("Deleted", null);
     }

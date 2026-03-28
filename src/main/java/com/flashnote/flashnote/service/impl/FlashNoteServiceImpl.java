@@ -5,8 +5,10 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.flashnote.dto.FlashNoteCreateRequest;
 import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
+import com.flashnote.flashnote.dto.FlashNoteUpdateRequest;
 import com.flashnote.flashnote.dto.MatchedMessageInfo;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
@@ -224,19 +226,24 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     }
 
     @Override
-    public FlashNote createNote(String username, FlashNote note) {
+    public FlashNote createNote(String username, FlashNoteCreateRequest request) {
         Long userId = getRequiredUserId(username);
+        FlashNote note = new FlashNote();
         note.setUserId(userId);
+        note.setTitle(request.getTitle());
+        note.setIcon(request.getIcon());
+        note.setContent(request.getContent());
+        note.setTags(request.getTags());
         note.setDeleted(false);
         note.setInbox(false);
-        note.setPinned(Boolean.TRUE.equals(note.getPinned()));
-        note.setHidden(Boolean.TRUE.equals(note.getHidden()));
+        note.setPinned(Boolean.TRUE.equals(request.getPinned()));
+        note.setHidden(Boolean.TRUE.equals(request.getHidden()));
         flashNoteMapper.insert(note);
         return note;
     }
 
     @Override
-    public FlashNote updateNote(String username, Long noteId, FlashNote incoming) {
+    public FlashNote updateNote(String username, Long noteId, FlashNoteUpdateRequest request) {
         if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be edited");
         }
@@ -250,15 +257,23 @@ public class FlashNoteServiceImpl implements FlashNoteService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Note not found");
         }
 
-        note.setTitle(incoming.getTitle());
-        note.setIcon(incoming.getIcon());
-        note.setContent(incoming.getContent());
-        note.setTags(incoming.getTags());
-        if (incoming.getPinned() != null) {
-            note.setPinned(incoming.getPinned());
+        if (request.getTitle() != null) {
+            note.setTitle(request.getTitle());
         }
-        if (incoming.getHidden() != null) {
-            note.setHidden(incoming.getHidden());
+        if (request.getIcon() != null) {
+            note.setIcon(request.getIcon());
+        }
+        if (request.getContent() != null) {
+            note.setContent(request.getContent());
+        }
+        if (request.getTags() != null) {
+            note.setTags(request.getTags());
+        }
+        if (request.getPinned() != null) {
+            note.setPinned(request.getPinned());
+        }
+        if (request.getHidden() != null) {
+            note.setHidden(request.getHidden());
         }
         flashNoteMapper.updateById(note);
         return note;

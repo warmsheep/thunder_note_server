@@ -4,8 +4,10 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.flashnote.dto.FlashNoteCreateRequest;
 import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
+import com.flashnote.flashnote.dto.FlashNoteUpdateRequest;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.flashnote.service.impl.FlashNoteServiceImpl;
@@ -268,16 +270,16 @@ class FlashNoteServiceImplTest {
         FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
         MessageMapper messageMapper = mock(MessageMapper.class);
 
-        FlashNote inputNote = new FlashNote();
-        inputNote.setTitle("New Note");
-        inputNote.setIcon("💡");
-        inputNote.setContent("New Content");
-        inputNote.setTags("tag1,tag2");
+        FlashNoteCreateRequest request = new FlashNoteCreateRequest();
+        request.setTitle("New Note");
+        request.setIcon("💡");
+        request.setContent("New Content");
+        request.setTags("tag1,tag2");
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
 
         // When
-        FlashNote result = service.createNote("alice", inputNote);
+        FlashNote result = service.createNote("alice", request);
 
         // Then
         assertEquals(1L, result.getUserId());
@@ -307,7 +309,7 @@ class FlashNoteServiceImplTest {
 
         when(flashNoteMapper.selectOne(any())).thenReturn(existingNote);
 
-        FlashNote updateData = new FlashNote();
+        FlashNoteUpdateRequest updateData = new FlashNoteUpdateRequest();
         updateData.setTitle("Updated Title");
         updateData.setIcon("📚");
         updateData.setContent("Updated Content");
@@ -351,7 +353,7 @@ class FlashNoteServiceImplTest {
         // Bob tries to update Alice's note - query returns null because userId doesn't match
         when(flashNoteMapper.selectOne(any())).thenReturn(null);
 
-        FlashNote updateData = new FlashNote();
+        FlashNoteUpdateRequest updateData = new FlashNoteUpdateRequest();
         updateData.setTitle("Hacked");
 
         FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);

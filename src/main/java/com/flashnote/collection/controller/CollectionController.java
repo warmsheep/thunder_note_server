@@ -1,8 +1,12 @@
 package com.flashnote.collection.controller;
 
+import com.flashnote.collection.dto.CollectionCreateRequest;
+import com.flashnote.collection.dto.CollectionUpdateRequest;
 import com.flashnote.collection.entity.Collection;
 import com.flashnote.collection.service.CollectionService;
 import com.flashnote.common.response.ApiResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,19 +33,21 @@ public class CollectionController {
     }
 
     @PostMapping
-    public ApiResponse<Collection> create(Authentication authentication, @RequestBody Collection collection) {
-        return ApiResponse.success(collectionService.createCollection(authentication.getName(), collection));
+    public ApiResponse<Collection> create(Authentication authentication,
+                                         @Valid @RequestBody CollectionCreateRequest request) {
+        return ApiResponse.success(collectionService.createCollection(authentication.getName(), request));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<Collection> update(Authentication authentication,
-                                          @PathVariable Long id,
-                                          @RequestBody Collection collection) {
-        return ApiResponse.success(collectionService.updateCollection(authentication.getName(), id, collection));
+                                          @PathVariable @Positive Long id,
+                                          @Valid @RequestBody CollectionUpdateRequest request) {
+        return ApiResponse.success(collectionService.updateCollection(authentication.getName(), id, request));
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(Authentication authentication, @PathVariable Long id) {
+    public ApiResponse<Void> delete(Authentication authentication,
+                                   @PathVariable @Positive Long id) {
         collectionService.deleteCollection(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
     }

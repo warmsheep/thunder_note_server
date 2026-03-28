@@ -5,6 +5,8 @@ import com.flashnote.message.dto.MessageBatchDeleteRequest;
 import com.flashnote.message.dto.MessageListRequest;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.service.MessageService;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,9 +17,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.util.List;
-import com.baomidou.mybatisplus.core.metadata.IPage;
 
 @RestController
 @RequestMapping("/api/messages")
@@ -55,7 +54,8 @@ public class MessageController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(Authentication authentication, @PathVariable Long id) {
+    public ApiResponse<Void> delete(Authentication authentication,
+                                   @PathVariable @Positive Long id) {
         messageService.deleteMessage(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
     }

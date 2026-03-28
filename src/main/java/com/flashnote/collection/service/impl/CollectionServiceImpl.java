@@ -3,6 +3,8 @@ package com.flashnote.collection.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.collection.dto.CollectionCreateRequest;
+import com.flashnote.collection.dto.CollectionUpdateRequest;
 import com.flashnote.collection.entity.Collection;
 import com.flashnote.collection.mapper.CollectionMapper;
 import com.flashnote.collection.service.CollectionService;
@@ -39,16 +41,19 @@ public class CollectionServiceImpl implements CollectionService {
     }
 
     @Override
-    public Collection createCollection(String username, Collection collection) {
+    public Collection createCollection(String username, CollectionCreateRequest request) {
         Long userId = getRequiredUserId(username);
+        Collection collection = new Collection();
         collection.setUserId(userId);
+        collection.setName(request.getName());
+        collection.setDescription(request.getDescription());
         collectionMapper.insert(collection);
         return collection;
     }
 
     @Override
     @Transactional
-    public Collection updateCollection(String username, Long id, Collection incoming) {
+    public Collection updateCollection(String username, Long id, CollectionUpdateRequest request) {
         Long userId = getRequiredUserId(username);
         Collection collection = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
                 .eq(Collection::getId, id)
@@ -59,10 +64,10 @@ public class CollectionServiceImpl implements CollectionService {
         }
 
         String oldName = collection.getName();
-        collection.setName(incoming.getName());
-        collection.setDescription(incoming.getDescription());
+        collection.setName(request.getName());
+        collection.setDescription(request.getDescription());
         collectionMapper.updateById(collection);
-        cascadeRename(userId, oldName, incoming.getName());
+        cascadeRename(userId, oldName, request.getName());
         return collection;
     }
 
