@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.config.MinioConfig;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.file.dto.FileUploadResult;
@@ -20,25 +21,39 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class FileServiceImpl implements FileService {
     private static final Logger log = LoggerFactory.getLogger(FileServiceImpl.class);
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+    private static final Set<String> ALLOWED_TYPES = Set.of(
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+            "video/mp4", "audio/mpeg", "audio/mp4", "application/pdf"
+    );
     private final MinioClient minioClient;
     private final MinioConfig minioConfig;
     private final UserMapper userMapper;
+    private final CurrentUserService currentUserService;
 
-    public FileServiceImpl(MinioClient minioClient, MinioConfig minioConfig, UserMapper userMapper) {
+    public FileServiceImpl(MinioClient minioClient, MinioConfig minioConfig, UserMapper userMapper, CurrentUserService currentUserService) {
         this.minioClient = minioClient;
         this.minioConfig = minioConfig;
         this.userMapper = userMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Override
     public FileUploadResult upload(String username, MultipartFile file) {
         try {
-            Long userId = getRequiredUserId(username);
+            if (file.getSize() > MAX_FILE_SIZE) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "File size exceeds 10MB limit");
+            }
+            if (!ALLOWED_TYPES.contains(file.getContentType())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "File type not allowed");
+            }
+            Long userId = currentUserService.getRequiredUserId(username);
             String extension = getFileExtension(file.getOriginalFilename());
             String objectName = userId + "/" + UUID.randomUUID() + extension;
 
@@ -83,19 +98,19 @@ public class FileServiceImpl implements FileService {
         }
     }
 
-    private Long getRequiredUserId(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user.getId();
-    }
-
     private String getFileExtension(String fileName) {
         if (fileName == null || !fileName.contains(".")) {
             return "";
         }
         return fileName.substring(fileName.lastIndexOf('.'));
+    }
+
+    private boolean containsTraversal(String path) {
+        String decoded = path;
+        while (decoded.contains("..")) {
+            decoded = decoded.replace("..", "");
+        }
+        return decoded.contains("/") && path.contains("..");
     }
 
     private String normalizeObjectName(String objectName) {
@@ -108,7 +123,11 @@ public class FileServiceImpl implements FileService {
             String query = queryStart >= 0 ? value.substring(queryStart + 1) : "";
             for (String pair : query.split("&")) {
                 if (pair.startsWith("objectName=")) {
-                    return URLDecoder.decode(pair.substring("objectName=".length()), StandardCharsets.UTF_8);
+                    String decoded = URLDecoder.decode(pair.substring("objectName=".length()), StandardCharsets.UTF_8);
+                    if (containsTraversal(decoded)) {
+                        throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid object name");
+                    }
+                    return decoded;
                 }
             }
             int schemeSplit = value.indexOf("://");
@@ -123,6 +142,9 @@ public class FileServiceImpl implements FileService {
         }
         if (value.startsWith("/")) {
             value = value.substring(1);
+        }
+        if (containsTraversal(value)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid object name");
         }
         return value;
     }

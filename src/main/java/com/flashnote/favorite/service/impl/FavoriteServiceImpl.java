@@ -3,6 +3,8 @@ package com.flashnote.favorite.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.common.constant.NoteConstants;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.favorite.dto.FavoriteMessageItem;
@@ -23,28 +25,27 @@ import java.util.List;
 @Service
 @Slf4j
 public class FavoriteServiceImpl implements FavoriteService {
-    private static final long COLLECTION_BOX_NOTE_ID = -1L;
-    private static final String COLLECTION_BOX_TITLE = "收集箱";
-    private static final String COLLECTION_BOX_ICON = "📥";
-
     private final UserMapper userMapper;
     private final MessageMapper messageMapper;
     private final FlashNoteMapper flashNoteMapper;
     private final FavoriteMessageMapper favoriteMessageMapper;
+    private final CurrentUserService currentUserService;
 
     public FavoriteServiceImpl(UserMapper userMapper,
                                MessageMapper messageMapper,
                                FlashNoteMapper flashNoteMapper,
-                               FavoriteMessageMapper favoriteMessageMapper) {
+                               FavoriteMessageMapper favoriteMessageMapper,
+                               CurrentUserService currentUserService) {
         this.userMapper = userMapper;
         this.messageMapper = messageMapper;
         this.flashNoteMapper = flashNoteMapper;
         this.favoriteMessageMapper = favoriteMessageMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Override
     public List<FavoriteMessageItem> listFavorites(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         List<FavoriteMessage> favorites = favoriteMessageMapper.selectList(new LambdaQueryWrapper<FavoriteMessage>()
                 .eq(FavoriteMessage::getUserId, userId)
                 .orderByDesc(FavoriteMessage::getCreatedAt));
@@ -61,7 +62,7 @@ public class FavoriteServiceImpl implements FavoriteService {
 
     @Override
     public FavoriteMessageItem addFavorite(String username, Long messageId) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         Message message = getAccessibleMessage(userId, messageId);
 
         FavoriteMessage favorite = favoriteMessageMapper.selectOne(new LambdaQueryWrapper<FavoriteMessage>()
@@ -85,7 +86,7 @@ public class FavoriteServiceImpl implements FavoriteService {
 
     @Override
     public void removeFavorite(String username, Long messageId) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         favoriteMessageMapper.delete(new LambdaQueryWrapper<FavoriteMessage>()
                 .eq(FavoriteMessage::getUserId, userId)
                 .eq(FavoriteMessage::getMessageId, messageId));
@@ -107,9 +108,9 @@ public class FavoriteServiceImpl implements FavoriteService {
         item.setMediaDuration(message.getMediaDuration());
         item.setPayload(message.getPayload());
         if (message.getFlashNoteId() != null) {
-            if (message.getFlashNoteId() == COLLECTION_BOX_NOTE_ID) {
-                item.setFlashNoteTitle(COLLECTION_BOX_TITLE);
-                item.setFlashNoteIcon(COLLECTION_BOX_ICON);
+            if (message.getFlashNoteId() == NoteConstants.COLLECTION_BOX_NOTE_ID) {
+                item.setFlashNoteTitle(NoteConstants.COLLECTION_BOX_TITLE);
+                item.setFlashNoteIcon(NoteConstants.COLLECTION_BOX_ICON);
                 return item;
             }
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
@@ -131,13 +132,5 @@ public class FavoriteServiceImpl implements FavoriteService {
 
     private boolean belongsToUser(Message message, Long userId) {
         return userId.equals(message.getSenderId()) || userId.equals(message.getReceiverId());
-    }
-
-    private Long getRequiredUserId(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user.getId();
     }
 }

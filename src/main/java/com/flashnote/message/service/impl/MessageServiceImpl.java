@@ -5,6 +5,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.common.constant.NoteConstants;
+import com.flashnote.common.constant.MediaType;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
@@ -31,35 +34,37 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MessageServiceImpl implements MessageService {
-    private static final long COLLECTION_BOX_NOTE_ID = -1L;
     private static final long SSE_TIMEOUT_MILLIS = 30_000L;
 
     private final MessageMapper messageMapper;
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
     private final FileService fileService;
+    private final CurrentUserService currentUserService;
     private final Map<Long, SseEmitter> emitterMap = new ConcurrentHashMap<>();
 
     @Autowired
     public MessageServiceImpl(MessageMapper messageMapper,
                               UserMapper userMapper,
                               FlashNoteMapper flashNoteMapper,
-                              FileService fileService) {
+                              FileService fileService,
+                              CurrentUserService currentUserService) {
         this.messageMapper = messageMapper;
         this.userMapper = userMapper;
         this.flashNoteMapper = flashNoteMapper;
         this.fileService = fileService;
+        this.currentUserService = currentUserService;
     }
 
     public MessageServiceImpl(MessageMapper messageMapper,
                               UserMapper userMapper,
                               FlashNoteMapper flashNoteMapper) {
-        this(messageMapper, userMapper, flashNoteMapper, null);
+        this(messageMapper, userMapper, flashNoteMapper, null, null);
     }
 
     @Override
     public IPage<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         LambdaQueryWrapper<Message> queryWrapper = new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
                         .eq(Message::getSenderId, userId)
@@ -70,7 +75,7 @@ public class MessageServiceImpl implements MessageService {
 
         if (flashNoteId != null) {
             queryWrapper.eq(Message::getFlashNoteId, flashNoteId);
-            if (flashNoteId == COLLECTION_BOX_NOTE_ID) {
+            if (flashNoteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
                 queryWrapper.eq(Message::getSenderId, userId)
                         .eq(Message::getReceiverId, userId);
             }
@@ -90,9 +95,9 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public Message sendMessage(String username, Message message) {
-        Long senderId = getRequiredUserId(username);
+        Long senderId = currentUserService.getRequiredUserId(username);
         message.setSenderId(senderId);
-        if (message.getFlashNoteId() != null && message.getFlashNoteId() == COLLECTION_BOX_NOTE_ID) {
+        if (message.getFlashNoteId() != null && message.getFlashNoteId() == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             message.setReceiverId(senderId);
         } else if (message.getReceiverId() == null) {
             message.setReceiverId(senderId);
@@ -101,7 +106,7 @@ public class MessageServiceImpl implements MessageService {
             message.setRole("user");
         }
         if (message.getFlashNoteId() != null) {
-            if (message.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
+            if (message.getFlashNoteId() != NoteConstants.COLLECTION_BOX_NOTE_ID) {
                 FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
                 if (flashNote == null || !senderId.equals(flashNote.getUserId())) {
                     throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
@@ -111,22 +116,10 @@ public class MessageServiceImpl implements MessageService {
         message.setReadStatus(false);
         // 设置默认 content，避免媒体消息时 content 为 null 违反 NOT NULL 约束
         if (message.getContent() == null || message.getContent().isBlank()) {
-            String mediaType = message.getMediaType();
-            if (mediaType != null) {
-                switch (mediaType) {
-                    case "IMAGE": message.setContent("[图片]"); break;
-                    case "VIDEO": message.setContent("[视频]"); break;
-                    case "VOICE": message.setContent("[语音]"); break;
-                    case "FILE": message.setContent("[文件]"); break;
-                    case "COMPOSITE": message.setContent("[卡片消息]"); break;
-                    default: message.setContent(""); break;
-                }
-            } else {
-                message.setContent("");
-            }
+            message.setContent(MediaType.resolveDisplay(message.getMediaType(), ""));
         }
         messageMapper.insert(message);
-        if (message.getFlashNoteId() != null && message.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
+        if (message.getFlashNoteId() != null && message.getFlashNoteId() != NoteConstants.COLLECTION_BOX_NOTE_ID) {
             FlashNote flashNote = flashNoteMapper.selectById(message.getFlashNoteId());
             if (flashNote != null && senderId.equals(flashNote.getUserId())) {
                 flashNote.setContent(message.getContent());
@@ -149,7 +142,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public Message mergeMessages(String username, com.flashnote.message.dto.MessageMergeRequest request) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         if (request.getMessageIds() == null || request.getMessageIds().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "No messages to merge");
         }
@@ -165,7 +158,7 @@ public class MessageServiceImpl implements MessageService {
 
         Long targetFlashNoteId = request.getFlashNoteId();
         Long targetReceiverId = request.getReceiverId();
-        if (targetFlashNoteId != null && targetFlashNoteId != COLLECTION_BOX_NOTE_ID) {
+        if (targetFlashNoteId != null && targetFlashNoteId != NoteConstants.COLLECTION_BOX_NOTE_ID) {
             FlashNote flashNote = flashNoteMapper.selectById(targetFlashNoteId);
             if (flashNote == null || !userId.equals(flashNote.getUserId())) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
@@ -243,7 +236,7 @@ public class MessageServiceImpl implements MessageService {
         Message compositeMsg = new Message();
         compositeMsg.setSenderId(userId);
         Long receiverId = targetReceiverId;
-        if (targetFlashNoteId != null && targetFlashNoteId == COLLECTION_BOX_NOTE_ID) {
+        if (targetFlashNoteId != null && targetFlashNoteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             receiverId = userId;
         } else if (receiverId == null) {
             receiverId = userId;
@@ -259,7 +252,7 @@ public class MessageServiceImpl implements MessageService {
         
         messageMapper.insert(compositeMsg);
         
-        if (compositeMsg.getFlashNoteId() != null && compositeMsg.getFlashNoteId() != COLLECTION_BOX_NOTE_ID) {
+        if (compositeMsg.getFlashNoteId() != null && compositeMsg.getFlashNoteId() != NoteConstants.COLLECTION_BOX_NOTE_ID) {
             FlashNote flashNote = flashNoteMapper.selectById(compositeMsg.getFlashNoteId());
             if (flashNote != null && userId.equals(flashNote.getUserId())) {
                 flashNote.setContent(compositeMsg.getContent());
@@ -283,7 +276,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public SseEmitter subscribe(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MILLIS);
         SseEmitter previousEmitter = emitterMap.put(userId, emitter);
         if (previousEmitter != null) {
@@ -304,17 +297,9 @@ public class MessageServiceImpl implements MessageService {
         return emitter;
     }
 
-    private Long getRequiredUserId(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user.getId();
-    }
-
     @Override
     public void deleteMessage(String username, Long messageId) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         
         // 查询消息是否存在且属于当前用户
         Message message = messageMapper.selectById(messageId);
@@ -337,7 +322,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public void deleteMessages(String username, List<Long> messageIds) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         if (messageIds == null || messageIds.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "No messages selected");
         }
@@ -361,9 +346,9 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public void clearInboxMessages(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         List<Message> inboxMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
-                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+                .eq(Message::getFlashNoteId, NoteConstants.COLLECTION_BOX_NOTE_ID)
                 .eq(Message::getSenderId, userId)
                 .eq(Message::getReceiverId, userId));
         if (inboxMessages.isEmpty()) {
@@ -373,7 +358,7 @@ public class MessageServiceImpl implements MessageService {
             deleteMediaIfNecessary(message);
         }
         messageMapper.delete(new LambdaQueryWrapper<Message>()
-                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+                .eq(Message::getFlashNoteId, NoteConstants.COLLECTION_BOX_NOTE_ID)
                 .eq(Message::getSenderId, userId)
                 .eq(Message::getReceiverId, userId));
     }
@@ -412,7 +397,7 @@ public class MessageServiceImpl implements MessageService {
 
     @Override
     public Long countMessages(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         return messageMapper.selectCount(new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
                         .eq(Message::getSenderId, userId)

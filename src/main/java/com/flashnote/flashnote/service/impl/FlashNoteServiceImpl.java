@@ -1,8 +1,12 @@
 package com.flashnote.flashnote.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.common.constant.NoteConstants;
+import com.flashnote.common.constant.MediaType;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.dto.FlashNoteCreateRequest;
@@ -31,35 +35,34 @@ import java.util.Set;
 
 @Service
 public class FlashNoteServiceImpl implements FlashNoteService {
-    public static final long COLLECTION_BOX_NOTE_ID = -1L;
-    private static final String COLLECTION_BOX_TITLE = "收集箱";
-    private static final String COLLECTION_BOX_ICON = "📥";
-
     private final UserMapper userMapper;
     private final FlashNoteMapper flashNoteMapper;
     private final MessageMapper messageMapper;
     private final FileService fileService;
+    private final CurrentUserService currentUserService;
 
     @Autowired
     public FlashNoteServiceImpl(UserMapper userMapper,
                                 FlashNoteMapper flashNoteMapper,
                                 MessageMapper messageMapper,
-                                FileService fileService) {
+                                FileService fileService,
+                                CurrentUserService currentUserService) {
         this.userMapper = userMapper;
         this.flashNoteMapper = flashNoteMapper;
         this.messageMapper = messageMapper;
         this.fileService = fileService;
+        this.currentUserService = currentUserService;
     }
 
     public FlashNoteServiceImpl(UserMapper userMapper,
                                 FlashNoteMapper flashNoteMapper,
                                 MessageMapper messageMapper) {
-        this(userMapper, flashNoteMapper, messageMapper, null);
+        this(userMapper, flashNoteMapper, messageMapper, null, null);
     }
 
     @Override
     public List<FlashNote> listNotes(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         List<FlashNote> queried = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
                 .eq(FlashNote::getDeleted, false)
@@ -67,7 +70,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                 .orderByDesc(FlashNote::getUpdatedAt));
         List<FlashNote> notes = queried == null ? new ArrayList<>() : new ArrayList<>(queried);
         FlashNote collectionBox = buildCollectionBoxNote(userId);
-        notes.removeIf(note -> note.getId() != null && note.getId().equals(COLLECTION_BOX_NOTE_ID));
+        notes.removeIf(note -> note.getId() != null && note.getId().equals(NoteConstants.COLLECTION_BOX_NOTE_ID));
         notes.add(0, collectionBox);
         fillLatestMessages(notes, userId);
         return notes;
@@ -83,7 +86,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                     .collect(Collectors.toList());
             return new FlashNoteSearchResponse(results, new ArrayList<>());
         }
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
 
         List<FlashNote> titleMatchedNotes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getUserId, userId)
@@ -202,22 +205,24 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     private List<Message> getMessageContext(Long flashNoteId, Long messageId) {
         // 查前3条: id < messageId, orderByDesc, limit 3, 然后reverse
-        List<Message> before = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        Page<Message> beforePage = new Page<>(1, 3);
+        messageMapper.selectPage(beforePage, new LambdaQueryWrapper<Message>()
                 .eq(Message::getFlashNoteId, flashNoteId)
                 .lt(Message::getId, messageId)
-                .orderByDesc(Message::getId)
-                .last("LIMIT 3"));
+                .orderByDesc(Message::getId));
+        List<Message> before = beforePage.getRecords();
         Collections.reverse(before);
 
         // 查自身
         Message self = messageMapper.selectById(messageId);
 
         // 查后3条: id > messageId, orderByAsc, limit 3
-        List<Message> after = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        Page<Message> afterPage = new Page<>(1, 3);
+        messageMapper.selectPage(afterPage, new LambdaQueryWrapper<Message>()
                 .eq(Message::getFlashNoteId, flashNoteId)
                 .gt(Message::getId, messageId)
-                .orderByAsc(Message::getId)
-                .last("LIMIT 3"));
+                .orderByAsc(Message::getId));
+        List<Message> after = afterPage.getRecords();
 
         List<Message> context = new ArrayList<>(before);
         if (self != null) context.add(self);
@@ -227,7 +232,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     @Override
     public FlashNote createNote(String username, FlashNoteCreateRequest request) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         FlashNote note = new FlashNote();
         note.setUserId(userId);
         note.setTitle(request.getTitle());
@@ -244,10 +249,10 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     @Override
     public FlashNote updateNote(String username, Long noteId, FlashNoteUpdateRequest request) {
-        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+        if (noteId != null && noteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be edited");
         }
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         FlashNote note = flashNoteMapper.selectOne(new LambdaQueryWrapper<FlashNote>()
                 .eq(FlashNote::getId, noteId)
                 .eq(FlashNote::getUserId, userId)
@@ -281,10 +286,10 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     @Override
     public FlashNote setPinned(String username, Long noteId, boolean pinned) {
-        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+        if (noteId != null && noteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be unpinned");
         }
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         FlashNote note = getOwnedNote(userId, noteId);
         note.setPinned(pinned);
         flashNoteMapper.updateById(note);
@@ -293,10 +298,10 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     @Override
     public FlashNote setHidden(String username, Long noteId, boolean hidden) {
-        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+        if (noteId != null && noteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be hidden");
         }
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         FlashNote note = getOwnedNote(userId, noteId);
         note.setHidden(hidden);
         if (hidden) {
@@ -308,10 +313,10 @@ public class FlashNoteServiceImpl implements FlashNoteService {
 
     @Override
     public void deleteNote(String username, Long noteId) {
-        if (noteId != null && noteId == COLLECTION_BOX_NOTE_ID) {
+        if (noteId != null && noteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Collection box cannot be deleted");
         }
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         FlashNote note = getOwnedNote(userId, noteId);
         note.setDeleted(true);
         flashNoteMapper.updateById(note);
@@ -331,14 +336,6 @@ public class FlashNoteServiceImpl implements FlashNoteService {
                 .eq(Message::getFlashNoteId, noteId));
     }
 
-    private Long getRequiredUserId(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user.getId();
-    }
-
     private void fillLatestMessages(List<FlashNote> notes, Long userId) {
         if (notes == null || notes.isEmpty()) {
             return;
@@ -347,7 +344,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         List<Long> noteIds = notes.stream()
                 .map(FlashNote::getId)
                 .filter(id -> id != null)
-                .filter(id -> id != COLLECTION_BOX_NOTE_ID)
+                .filter(id -> id != NoteConstants.COLLECTION_BOX_NOTE_ID)
                 .collect(Collectors.toList());
         Message inboxLatest = latestInboxMessage(userId);
 
@@ -369,7 +366,7 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         }
 
         for (FlashNote note : notes) {
-            if (note.getId() != null && note.getId() == COLLECTION_BOX_NOTE_ID) {
+            if (note.getId() != null && note.getId() == NoteConstants.COLLECTION_BOX_NOTE_ID) {
                 note.setLatestMessage(resolveLatestMessage(inboxLatest));
             } else {
                 Message latest = latestByNoteId.get(note.getId());
@@ -379,22 +376,20 @@ public class FlashNoteServiceImpl implements FlashNoteService {
     }
 
     private Message latestInboxMessage(Long userId) {
-        List<Message> inboxMessages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
-                .eq(Message::getFlashNoteId, COLLECTION_BOX_NOTE_ID)
+        return messageMapper.selectOne(new LambdaQueryWrapper<Message>()
+                .eq(Message::getFlashNoteId, NoteConstants.COLLECTION_BOX_NOTE_ID)
                 .eq(Message::getSenderId, userId)
                 .eq(Message::getReceiverId, userId)
-                .orderByDesc(Message::getCreatedAt)
-                .orderByDesc(Message::getId)
+                .orderByDesc(Message::getCreatedAt, Message::getId)
                 .last("LIMIT 1"));
-        return inboxMessages.isEmpty() ? null : inboxMessages.get(0);
     }
 
     private FlashNote buildCollectionBoxNote(Long userId) {
         FlashNote note = new FlashNote();
-        note.setId(COLLECTION_BOX_NOTE_ID);
+        note.setId(NoteConstants.COLLECTION_BOX_NOTE_ID);
         note.setUserId(userId);
-        note.setTitle(COLLECTION_BOX_TITLE);
-        note.setIcon(COLLECTION_BOX_ICON);
+        note.setTitle(NoteConstants.COLLECTION_BOX_TITLE);
+        note.setIcon(NoteConstants.COLLECTION_BOX_ICON);
         note.setContent("");
         note.setTags("收集箱");
         note.setDeleted(false);
@@ -425,19 +420,6 @@ public class FlashNoteServiceImpl implements FlashNoteService {
         if (latest == null) {
             return null;
         }
-        String mediaType = latest.getMediaType();
-        if (mediaType != null && !mediaType.isBlank() && !"TEXT".equalsIgnoreCase(mediaType)) {
-            if ("IMAGE".equalsIgnoreCase(mediaType)) {
-                return "[图片]";
-            }
-            if ("VIDEO".equalsIgnoreCase(mediaType)) {
-                return "[视频]";
-            }
-            if ("VOICE".equalsIgnoreCase(mediaType)) {
-                return "[语音]";
-            }
-            return "[文件]";
-        }
-        return latest.getContent();
+        return MediaType.resolveDisplay(latest.getMediaType(), latest.getContent());
     }
 }

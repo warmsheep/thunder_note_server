@@ -4,6 +4,8 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.common.service.CurrentUserService;
+import com.flashnote.file.service.FileService;
 import com.flashnote.flashnote.dto.FlashNoteCreateRequest;
 import com.flashnote.flashnote.dto.FlashNoteSearchResponse;
 import com.flashnote.flashnote.dto.FlashNoteSearchResult;
@@ -16,6 +18,8 @@ import com.flashnote.message.mapper.MessageMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -26,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class FlashNoteServiceImplTest {
 
     private UserMapper createMockUserMapper(Long userId, String username) {
@@ -35,6 +40,21 @@ class FlashNoteServiceImplTest {
         user.setUsername(username);
         when(userMapper.selectOne(any())).thenReturn(user);
         return userMapper;
+    }
+
+    private CurrentUserService mockCurrentUserService() {
+        CurrentUserService cs = mock(CurrentUserService.class);
+        when(cs.getRequiredUserId(any())).thenAnswer(inv -> {
+            String name = inv.getArgument(0, String.class);
+            if ("alice".equals(name)) return 1L;
+            if ("bob".equals(name)) return 2L;
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
+        });
+        return cs;
+    }
+
+    private FileService mockFileService() {
+        return mock(FileService.class);
     }
 
     @Test
@@ -60,7 +80,7 @@ class FlashNoteServiceImplTest {
 
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(note1, note2));
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When
         List<FlashNote> result = service.listNotes("alice");
@@ -81,7 +101,7 @@ class FlashNoteServiceImplTest {
         MessageMapper messageMapper = mock(MessageMapper.class);
         when(flashNoteMapper.selectList(any())).thenReturn(Collections.emptyList());
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When
         List<FlashNote> result = service.listNotes("alice");
@@ -114,7 +134,7 @@ class FlashNoteServiceImplTest {
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(titleMatch, contentMatch));
         when(messageMapper.selectList(any())).thenReturn(Collections.emptyList());
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         FlashNoteSearchResponse response = service.searchNotes("alice", "旅行");
         List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
@@ -140,7 +160,7 @@ class FlashNoteServiceImplTest {
         
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(note));
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         FlashNoteSearchResponse response = service.searchNotes("alice", "   ");
         List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
@@ -176,7 +196,7 @@ class FlashNoteServiceImplTest {
         when(messageMapper.selectList(any())).thenReturn(List.of(matchedMessage));
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(note));
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         FlashNoteSearchResponse response = service.searchNotes("alice", "budget");
         List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
@@ -214,7 +234,7 @@ class FlashNoteServiceImplTest {
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(note));
         when(messageMapper.selectList(any())).thenReturn(List.of(matchedMessage));
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         FlashNoteSearchResponse response = service.searchNotes("alice", "旅行");
         List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
@@ -250,7 +270,7 @@ class FlashNoteServiceImplTest {
         when(flashNoteMapper.selectList(any())).thenReturn(List.of(note));
         when(messageMapper.selectList(any())).thenReturn(List.of(matchedMessage));
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         FlashNoteSearchResponse response = service.searchNotes("alice", "budget");
         List<FlashNoteSearchResult> result = new java.util.ArrayList<>();
@@ -276,7 +296,7 @@ class FlashNoteServiceImplTest {
         request.setContent("New Content");
         request.setTags("tag1,tag2");
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When
         FlashNote result = service.createNote("alice", request);
@@ -315,7 +335,7 @@ class FlashNoteServiceImplTest {
         updateData.setContent("Updated Content");
         updateData.setTags("updated");
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When
         FlashNote result = service.updateNote("alice", 1L, updateData);
@@ -356,7 +376,7 @@ class FlashNoteServiceImplTest {
         FlashNoteUpdateRequest updateData = new FlashNoteUpdateRequest();
         updateData.setTitle("Hacked");
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When & Then
         BusinessException exception = assertThrows(BusinessException.class, 
@@ -381,7 +401,7 @@ class FlashNoteServiceImplTest {
 
         when(flashNoteMapper.selectOne(any())).thenReturn(existingNote);
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When
         service.deleteNote("alice", 1L);
@@ -399,7 +419,7 @@ class FlashNoteServiceImplTest {
         MessageMapper messageMapper = mock(MessageMapper.class);
         when(flashNoteMapper.selectOne(any())).thenReturn(null);
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When & Then
         BusinessException exception = assertThrows(BusinessException.class, 
@@ -417,7 +437,7 @@ class FlashNoteServiceImplTest {
         FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
         MessageMapper messageMapper = mock(MessageMapper.class);
 
-        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper);
+        FlashNoteServiceImpl service = new FlashNoteServiceImpl(userMapper, flashNoteMapper, messageMapper, mockFileService(), mockCurrentUserService());
 
         // When & Then
         BusinessException exception = assertThrows(BusinessException.class, 

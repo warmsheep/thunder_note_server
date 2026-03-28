@@ -4,6 +4,8 @@ import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
+import com.flashnote.common.service.CurrentUserService;
+import com.flashnote.file.service.FileService;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.message.dto.MessageMergeRequest;
@@ -36,7 +38,9 @@ class MessageServiceImplTest {
 
     @Test
     void subscribeUsesFiniteTimeoutAndKeepsLatestEmitter() throws Exception {
-        MessageServiceImpl service = new MessageServiceImpl(mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class));
+        MessageServiceImpl service = new MessageServiceImpl(
+                mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class),
+                mock(FileService.class), mockCurrentUserService());
 
         SseEmitter first = service.subscribe("alice");
         SseEmitter second = service.subscribe("alice");
@@ -54,7 +58,9 @@ class MessageServiceImplTest {
 
         when(userMapper.selectOne(any())).thenReturn(buildUser(1L, "alice"));
 
-        MessageServiceImpl service = new MessageServiceImpl(messageMapper, userMapper, flashNoteMapper);
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, userMapper, flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
         Message message = new Message();
         message.setContent("hello");
         message.setClientRequestId("req-123");
@@ -79,7 +85,9 @@ class MessageServiceImplTest {
         flashNote.setUserId(2L);
         when(flashNoteMapper.selectById(9L)).thenReturn(flashNote);
 
-        MessageServiceImpl service = new MessageServiceImpl(messageMapper, userMapper, flashNoteMapper);
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, userMapper, flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
         Message message = new Message();
         message.setFlashNoteId(9L);
         message.setContent("hello");
@@ -92,7 +100,9 @@ class MessageServiceImplTest {
 
     @Test
     void mergeMessagesRejectsEmptyMessageIds() {
-        MessageServiceImpl service = new MessageServiceImpl(mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class));
+        MessageServiceImpl service = new MessageServiceImpl(
+                mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class),
+                mock(FileService.class), mockCurrentUserService());
 
         MessageMergeRequest request = new MessageMergeRequest();
         request.setTitle("卡片标题");
@@ -108,7 +118,9 @@ class MessageServiceImplTest {
 
     @Test
     void mergeMessagesRejectsTooManyMessages() {
-        MessageServiceImpl service = new MessageServiceImpl(mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class));
+        MessageServiceImpl service = new MessageServiceImpl(
+                mock(MessageMapper.class), mockUserMapper(), mock(FlashNoteMapper.class),
+                mock(FileService.class), mockCurrentUserService());
 
         List<Long> messageIds = new ArrayList<>();
         for (long i = 1; i <= 51; i++) {
@@ -137,7 +149,9 @@ class MessageServiceImplTest {
                 buildMessage(11L, 2L, 3L, 99L, "TEXT", "b")
         ));
 
-        MessageServiceImpl service = new MessageServiceImpl(messageMapper, mockUserMapper(), flashNoteMapper);
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
         MessageMergeRequest request = new MessageMergeRequest();
         request.setTitle("卡片标题");
         request.setFlashNoteId(99L);
@@ -165,7 +179,9 @@ class MessageServiceImplTest {
 
         when(messageMapper.selectBatchIds(List.of(2L, 1L))).thenReturn(List.of(first, second));
 
-        MessageServiceImpl service = new MessageServiceImpl(messageMapper, mockUserMapper(), flashNoteMapper);
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
         MessageMergeRequest request = new MessageMergeRequest();
         request.setTitle("周报卡片");
         request.setFlashNoteId(88L);
@@ -210,6 +226,12 @@ class MessageServiceImplTest {
         UserMapper userMapper = mock(UserMapper.class);
         when(userMapper.selectOne(any())).thenReturn(buildUser(1L, "alice"));
         return userMapper;
+    }
+
+    private CurrentUserService mockCurrentUserService() {
+        CurrentUserService cs = mock(CurrentUserService.class);
+        when(cs.getRequiredUserId("alice")).thenReturn(1L);
+        return cs;
     }
 
     private User buildUser(Long id, String username) {

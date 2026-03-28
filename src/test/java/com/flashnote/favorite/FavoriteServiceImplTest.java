@@ -2,6 +2,7 @@ package com.flashnote.favorite;
 
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.favorite.dto.FavoriteMessageItem;
 import com.flashnote.favorite.entity.FavoriteMessage;
 import com.flashnote.favorite.mapper.FavoriteMessageMapper;
@@ -11,6 +12,10 @@ import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
@@ -22,7 +27,15 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class FavoriteServiceImplTest {
+
+    private CurrentUserService mockCurrentUserService() {
+        CurrentUserService cs = mock(CurrentUserService.class);
+        when(cs.getRequiredUserId("alice")).thenReturn(1L);
+        return cs;
+    }
 
     @Test
     void addFavoriteIsIdempotentWhenUniqueConstraintRaces() {
@@ -47,7 +60,7 @@ class FavoriteServiceImplTest {
                 .thenReturn(existingFavorite(8L, 1L, 5L));
         doThrow(new DuplicateKeyException("duplicate")).when(favoriteMessageMapper).insert(any(FavoriteMessage.class));
 
-        FavoriteServiceImpl service = new FavoriteServiceImpl(userMapper, messageMapper, flashNoteMapper, favoriteMessageMapper);
+        FavoriteServiceImpl service = new FavoriteServiceImpl(userMapper, messageMapper, flashNoteMapper, favoriteMessageMapper, mockCurrentUserService());
 
         FavoriteMessageItem item = service.addFavorite("alice", 5L);
 
@@ -81,7 +94,7 @@ class FavoriteServiceImplTest {
         foreignNote.setTitle("foreign");
         when(flashNoteMapper.selectById(11L)).thenReturn(foreignNote);
 
-        FavoriteServiceImpl service = new FavoriteServiceImpl(userMapper, messageMapper, flashNoteMapper, favoriteMessageMapper);
+        FavoriteServiceImpl service = new FavoriteServiceImpl(userMapper, messageMapper, flashNoteMapper, favoriteMessageMapper, mockCurrentUserService());
 
         List<FavoriteMessageItem> items = service.listFavorites("alice");
 

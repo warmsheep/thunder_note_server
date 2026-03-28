@@ -1,8 +1,11 @@
 package com.flashnote.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
+import com.flashnote.common.constant.MediaType;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.message.entity.Message;
@@ -35,15 +38,18 @@ public class UserServiceImpl implements UserService {
     private final UserProfileMapper userProfileMapper;
     private final FriendRelationMapper friendRelationMapper;
     private final MessageMapper messageMapper;
+    private final CurrentUserService currentUserService;
 
     public UserServiceImpl(UserMapper userMapper,
                            UserProfileMapper userProfileMapper,
                            FriendRelationMapper friendRelationMapper,
-                           MessageMapper messageMapper) {
+                           MessageMapper messageMapper,
+                           CurrentUserService currentUserService) {
         this.userMapper = userMapper;
         this.userProfileMapper = userProfileMapper;
         this.friendRelationMapper = friendRelationMapper;
         this.messageMapper = messageMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Override
@@ -155,39 +161,22 @@ public class UserServiceImpl implements UserService {
     }
 
     private String findLatestConversationMessage(Long currentUserId, Long otherUserId) {
-        List<Message> messages = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+        Message message = messageMapper.selectOne(new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
                         .and(pair -> pair.eq(Message::getSenderId, currentUserId)
                                 .eq(Message::getReceiverId, otherUserId))
                         .or(pair -> pair.eq(Message::getSenderId, otherUserId)
                                 .eq(Message::getReceiverId, currentUserId)))
-                .orderByDesc(Message::getCreatedAt)
-                .orderByDesc(Message::getId)
+                .orderByDesc(Message::getCreatedAt, Message::getId)
                 .last("LIMIT 1"));
-        if (messages.isEmpty()) {
-            return null;
-        }
-        return resolveLatestMessage(messages.get(0));
+        return message == null ? null : resolveLatestMessage(message);
     }
 
     private String resolveLatestMessage(Message latest) {
         if (latest == null) {
             return null;
         }
-        String mediaType = latest.getMediaType();
-        if (mediaType != null && !mediaType.isBlank() && !"TEXT".equalsIgnoreCase(mediaType)) {
-            if ("IMAGE".equalsIgnoreCase(mediaType)) {
-                return "[图片]";
-            }
-            if ("VIDEO".equalsIgnoreCase(mediaType)) {
-                return "[视频]";
-            }
-            if ("VOICE".equalsIgnoreCase(mediaType)) {
-                return "[语音]";
-            }
-            return "[文件]";
-        }
-        return latest.getContent();
+        return MediaType.resolveDisplay(latest.getMediaType(), latest.getContent());
     }
 
     @Override
@@ -318,14 +307,15 @@ public class UserServiceImpl implements UserService {
     public List<ContactSearchUserDto> searchUsers(String username, String keyword) {
         User currentUser = getRequiredUser(username);
         String normalized = keyword == null ? "" : keyword.trim();
-        List<User> users = userMapper.selectList(new LambdaQueryWrapper<User>()
+        Page<User> page = new Page<>(1, 30);
+        userMapper.selectPage(page, new LambdaQueryWrapper<User>()
                 .eq(User::getStatus, 1)
                 .ne(User::getId, currentUser.getId())
                 .and(wrapper -> wrapper.like(User::getUsername, normalized)
                         .or()
                         .like(User::getNickname, normalized))
-                .orderByAsc(User::getUsername)
-                .last("LIMIT 30"));
+                .orderByAsc(User::getUsername));
+        List<User> users = page.getRecords();
 
         List<ContactSearchUserDto> result = new ArrayList<>();
         for (User user : users) {
@@ -342,12 +332,7 @@ public class UserServiceImpl implements UserService {
     }
 
     private User getRequiredUser(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>()
-                .eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user;
+        return currentUserService.getRequiredUser(username);
     }
 
     private FriendRelation getPendingRequestOwnedByCurrentUser(Long currentUserId, Long requestId) {
@@ -365,8 +350,7 @@ public class UserServiceImpl implements UserService {
         return friendRelationMapper.selectOne(new LambdaQueryWrapper<FriendRelation>()
                 .and(wrapper -> wrapper
                         .and(pair -> pair.eq(FriendRelation::getRequesterId, userA).eq(FriendRelation::getAddresseeId, userB))
-                        .or(pair -> pair.eq(FriendRelation::getRequesterId, userB).eq(FriendRelation::getAddresseeId, userA)))
-                .last("LIMIT 1"));
+                        .or(pair -> pair.eq(FriendRelation::getRequesterId, userB).eq(FriendRelation::getAddresseeId, userA))));
     }
 
     private String resolveRelationStatus(Long currentUserId, Long otherUserId) {

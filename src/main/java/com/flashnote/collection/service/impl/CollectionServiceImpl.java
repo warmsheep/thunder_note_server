@@ -1,6 +1,7 @@
 package com.flashnote.collection.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.collection.dto.CollectionCreateRequest;
@@ -8,6 +9,7 @@ import com.flashnote.collection.dto.CollectionUpdateRequest;
 import com.flashnote.collection.entity.Collection;
 import com.flashnote.collection.mapper.CollectionMapper;
 import com.flashnote.collection.service.CollectionService;
+import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.common.exception.BusinessException;
 import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
@@ -23,18 +25,21 @@ public class CollectionServiceImpl implements CollectionService {
     private final UserMapper userMapper;
     private final CollectionMapper collectionMapper;
     private final FlashNoteMapper flashNoteMapper;
+    private final CurrentUserService currentUserService;
 
     public CollectionServiceImpl(UserMapper userMapper,
                                  CollectionMapper collectionMapper,
-                                 FlashNoteMapper flashNoteMapper) {
+                                 FlashNoteMapper flashNoteMapper,
+                                 CurrentUserService currentUserService) {
         this.userMapper = userMapper;
         this.collectionMapper = collectionMapper;
         this.flashNoteMapper = flashNoteMapper;
+        this.currentUserService = currentUserService;
     }
 
     @Override
     public List<Collection> listCollections(String username) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         return collectionMapper.selectList(new LambdaQueryWrapper<Collection>()
                 .eq(Collection::getUserId, userId)
                 .orderByDesc(Collection::getUpdatedAt));
@@ -42,7 +47,7 @@ public class CollectionServiceImpl implements CollectionService {
 
     @Override
     public Collection createCollection(String username, CollectionCreateRequest request) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         Collection collection = new Collection();
         collection.setUserId(userId);
         collection.setName(request.getName());
@@ -54,7 +59,7 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public Collection updateCollection(String username, Long id, CollectionUpdateRequest request) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         Collection collection = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
                 .eq(Collection::getId, id)
                 .eq(Collection::getUserId, userId));
@@ -74,7 +79,7 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional
     public void deleteCollection(String username, Long id) {
-        Long userId = getRequiredUserId(username);
+        Long userId = currentUserService.getRequiredUserId(username);
         Collection collection = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
                 .eq(Collection::getId, id)
                 .eq(Collection::getUserId, userId));
@@ -95,15 +100,11 @@ public class CollectionServiceImpl implements CollectionService {
         }
         String normalizedOld = normalizeName(oldName);
         String normalizedNew = normalizeName(newName);
-        List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
-                .eq(FlashNote::getUserId, userId)
-                .eq(FlashNote::getDeleted, false));
-        for (FlashNote note : notes) {
-            if (normalizedOld.equals(normalizeName(note.getTags()))) {
-                note.setTags(normalizedNew);
-                flashNoteMapper.updateById(note);
-            }
-        }
+        flashNoteMapper.update(null, new UpdateWrapper<FlashNote>()
+                .eq("user_id", userId)
+                .eq("deleted", false)
+                .eq("tags", normalizedOld)
+                .set("tags", normalizedNew));
     }
 
     private void cascadeClear(Long userId, String collectionName) {
@@ -111,15 +112,11 @@ public class CollectionServiceImpl implements CollectionService {
             return;
         }
         String normalizedCollectionName = normalizeName(collectionName);
-        List<FlashNote> notes = flashNoteMapper.selectList(new LambdaQueryWrapper<FlashNote>()
-                .eq(FlashNote::getUserId, userId)
-                .eq(FlashNote::getDeleted, false));
-        for (FlashNote note : notes) {
-            if (normalizedCollectionName.equals(normalizeName(note.getTags()))) {
-                note.setTags(null);
-                flashNoteMapper.updateById(note);
-            }
-        }
+        flashNoteMapper.update(null, new UpdateWrapper<FlashNote>()
+                .eq("user_id", userId)
+                .eq("deleted", false)
+                .eq("tags", normalizedCollectionName)
+                .set("tags", null));
     }
 
     private boolean isBlank(String value) {
@@ -133,11 +130,4 @@ public class CollectionServiceImpl implements CollectionService {
         return value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
-    private Long getRequiredUserId(String username) {
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "User not found");
-        }
-        return user.getId();
-    }
 }

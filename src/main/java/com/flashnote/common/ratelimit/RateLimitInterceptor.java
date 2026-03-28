@@ -8,11 +8,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.io.IOException;
+import java.util.Set;
 
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
     private static final int LOGIN_MAX_ATTEMPTS = 10;
     private static final int LOGIN_WINDOW_SECONDS = 60;
+    private static final Set<String> PROTECTED_PATHS = Set.of(
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/auth/refresh"
+    );
 
     private final RedisUtil redisUtil;
 
@@ -22,11 +28,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        if (!"/api/auth/login".equals(request.getRequestURI())) {
+        if (!PROTECTED_PATHS.contains(request.getRequestURI())) {
             return true;
         }
         String ip = resolveClientIp(request);
-        String key = "ratelimit:login:" + ip;
+        String key = "ratelimit:auth:" + ip;
 
         String countStr = redisUtil.get(key);
         int count = countStr == null ? 0 : Integer.parseInt(countStr);
