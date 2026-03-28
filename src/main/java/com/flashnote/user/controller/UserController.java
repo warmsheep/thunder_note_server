@@ -1,6 +1,7 @@
 package com.flashnote.user.controller;
 
 import com.flashnote.common.response.ApiResponse;
+import com.flashnote.user.dto.AvatarUpdateRequest;
 import com.flashnote.user.dto.ContactSearchUserDto;
 import com.flashnote.user.dto.ContactUserDto;
 import com.flashnote.user.dto.FriendRequestActionRequest;
@@ -8,6 +9,7 @@ import com.flashnote.user.dto.FriendRequestCreateRequest;
 import com.flashnote.user.dto.FriendRequestDto;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -99,8 +101,7 @@ public class UserController {
 
     @PutMapping("/avatar")
     public ApiResponse<String> updateAvatar(Authentication authentication,
-                                         @RequestBody java.util.Map<String, String> body) {
-        String avatarUrl = body.get("avatar");
-        return ApiResponse.success(userService.updateAvatar(authentication.getName(), avatarUrl));
+                                         @Valid @RequestBody AvatarUpdateRequest request) {
+        return ApiResponse.success(userService.updateAvatar(authentication.getName(), request.getAvatar()));
     }
 }

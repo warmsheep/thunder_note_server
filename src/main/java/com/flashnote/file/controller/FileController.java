@@ -3,6 +3,7 @@ package com.flashnote.file.controller;
 import com.flashnote.common.response.ApiResponse;
 import com.flashnote.file.dto.FileUploadResult;
 import com.flashnote.file.service.FileService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +23,7 @@ import java.net.URLConnection;
 
 @RestController
 @RequestMapping("/api/files")
+@Slf4j
 public class FileController {
     private final FileService fileService;
 
@@ -56,7 +58,8 @@ public class FileController {
         if (mimeType != null) {
             try {
                 return MediaType.parseMediaType(mimeType);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.warn("Failed to parse MIME type for objectName={}: {}", objectName, e.getMessage());
             }
         }
         return MediaType.APPLICATION_OCTET_STREAM;

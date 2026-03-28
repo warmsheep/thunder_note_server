@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 
 @RestController
 @RequestMapping("/api/messages")
@@ -28,7 +29,7 @@ public class MessageController {
     }
 
     @PostMapping("/list")
-    public ApiResponse<List<Message>> list(Authentication authentication,
+    public ApiResponse<IPage<Message>> list(Authentication authentication,
                                           @RequestBody(required = false) MessageListRequest request) {
         Long flashNoteId = request == null ? null : request.getFlashNoteId();
         Long peerUserId = request == null ? null : request.getPeerUserId();

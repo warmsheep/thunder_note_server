@@ -2,7 +2,9 @@ package com.flashnote.sync.controller;
 
 import com.flashnote.common.response.ApiResponse;
 import com.flashnote.sync.dto.SyncPullRequest;
+import com.flashnote.sync.dto.SyncPushRequest;
 import com.flashnote.sync.service.SyncService;
+import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,7 +30,7 @@ public class SyncController {
 
     @PostMapping("/push")
     public ApiResponse<Map<String, Object>> push(Authentication authentication,
-                                                 @RequestBody Map<String, Object> payload) {
+                                                 @Valid @RequestBody SyncPushRequest payload) {
         return ApiResponse.success(syncService.push(authentication.getName(), payload));
     }
 

@@ -10,6 +10,7 @@ import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.flashnote.service.FlashNoteService;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
+import com.flashnote.sync.dto.SyncPushRequest;
 import com.flashnote.sync.service.impl.SyncServiceImpl;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.service.UserService;
@@ -24,13 +25,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SyncServiceImplTest {
+
+    private SyncServiceImpl buildService(FlashNoteService flashNoteService,
+                                         CollectionService collectionService,
+                                         UserService userService,
+                                         UserMapper userMapper,
+                                         FlashNoteMapper flashNoteMapper,
+                                         CollectionMapper collectionMapper,
+                                         MessageMapper messageMapper,
+                                         FavoriteMessageMapper favoriteMessageMapper,
+                                         FavoriteService favoriteService) {
+        return new SyncServiceImpl(
+                flashNoteService,
+                collectionService,
+                userService,
+                userMapper,
+                flashNoteMapper,
+                collectionMapper,
+                messageMapper,
+                favoriteMessageMapper,
+                favoriteService
+        );
+    }
+
+    private SyncPushRequest buildRequest(List<SyncPushRequest.NotePushDto> notes,
+                                         List<SyncPushRequest.CollectionPushDto> collections,
+                                         List<SyncPushRequest.MessagePushDto> messages,
+                                         List<SyncPushRequest.FavoritePushDto> favorites) {
+        SyncPushRequest req = new SyncPushRequest();
+        req.setNotes(notes);
+        req.setCollections(collections);
+        req.setMessages(messages);
+        req.setFavorites(favorites);
+        return req;
+    }
 
     @Test
     void pullIncludesFavoritesPayload() {
@@ -47,27 +81,18 @@ class SyncServiceImplTest {
         User user = new User();
         user.setId(1L);
         user.setUsername("alice");
-        when(userMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(user);
+        when(userMapper.selectOne(any())).thenReturn(user);
         when(userService.getProfile("alice")).thenReturn(new UserProfile());
         when(flashNoteService.listNotes("alice")).thenReturn(List.of());
         when(collectionService.listCollections("alice")).thenReturn(List.of());
-        when(messageMapper.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        when(messageMapper.selectList(any())).thenReturn(List.of());
         when(favoriteService.listFavorites("alice")).thenReturn(List.of());
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
         Map<String, Object> result = syncService.pull("alice", null);
-
         assertTrue(result.containsKey("favorites"));
     }
 
@@ -86,31 +111,20 @@ class SyncServiceImplTest {
         User user = new User();
         user.setId(1L);
         user.setUsername("alice");
-        when(userMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(user);
+        when(userMapper.selectOne(any())).thenReturn(user);
         Message message = new Message();
         message.setId(3L);
         message.setSenderId(1L);
         message.setReceiverId(1L);
         when(messageMapper.selectById(3L)).thenReturn(message);
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
-        Map<String, Object> payload = Map.of(
-                "notes", List.of(),
-                "collections", List.of(),
-                "messages", List.of(),
-                "favorites", List.of(Map.of("messageId", 3L))
-        );
+        SyncPushRequest.FavoritePushDto fav = new SyncPushRequest.FavoritePushDto();
+        fav.setMessageId(3L);
+        SyncPushRequest payload = buildRequest(List.of(), List.of(), List.of(), List.of(fav));
 
         Map<String, Object> result = syncService.push("alice", payload);
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");
@@ -141,24 +155,14 @@ class SyncServiceImplTest {
         foreignMessage.setReceiverId(2L);
         when(messageMapper.selectById(8L)).thenReturn(foreignMessage);
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
-        Map<String, Object> payload = Map.of(
-                "notes", List.of(),
-                "collections", List.of(),
-                "messages", List.of(Map.of("id", 8L, "content", "hijack")),
-                "favorites", List.of()
-        );
+        SyncPushRequest.MessagePushDto msg = new SyncPushRequest.MessagePushDto();
+        msg.setId(8L);
+        msg.setContent("hijack");
+        SyncPushRequest payload = buildRequest(List.of(), List.of(), List.of(msg), List.of());
 
         Map<String, Object> result = syncService.push("alice", payload);
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");
@@ -184,24 +188,13 @@ class SyncServiceImplTest {
         when(userMapper.selectOne(any())).thenReturn(user);
         when(messageMapper.selectById(99L)).thenReturn(null);
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
-        Map<String, Object> payload = Map.of(
-                "notes", List.of(),
-                "collections", List.of(),
-                "messages", List.of(),
-                "favorites", List.of(Map.of("messageId", 99L))
-        );
+        SyncPushRequest.FavoritePushDto fav = new SyncPushRequest.FavoritePushDto();
+        fav.setMessageId(99L);
+        SyncPushRequest payload = buildRequest(List.of(), List.of(), List.of(), List.of(fav));
 
         Map<String, Object> result = syncService.push("alice", payload);
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");
@@ -233,24 +226,13 @@ class SyncServiceImplTest {
         when(favoriteMessageMapper.selectOne(any())).thenReturn(null);
         doThrow(new DuplicateKeyException("duplicate")).when(favoriteMessageMapper).insert(any());
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
-        Map<String, Object> payload = Map.of(
-                "notes", List.of(),
-                "collections", List.of(),
-                "messages", List.of(),
-                "favorites", List.of(Map.of("messageId", 5L))
-        );
+        SyncPushRequest.FavoritePushDto fav = new SyncPushRequest.FavoritePushDto();
+        fav.setMessageId(5L);
+        SyncPushRequest payload = buildRequest(List.of(), List.of(), List.of(), List.of(fav));
 
         Map<String, Object> result = syncService.push("alice", payload);
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");
@@ -277,29 +259,16 @@ class SyncServiceImplTest {
         when(messageMapper.selectById(any())).thenReturn(null);
         when(messageMapper.selectOne(any())).thenReturn(null);
 
-        SyncServiceImpl syncService = new SyncServiceImpl(
-                flashNoteService,
-                collectionService,
-                userService,
-                userMapper,
-                flashNoteMapper,
-                collectionMapper,
-                messageMapper,
-                favoriteMessageMapper,
-                favoriteService
-        );
+        SyncServiceImpl syncService = buildService(
+                flashNoteService, collectionService, userService, userMapper,
+                flashNoteMapper, collectionMapper, messageMapper, favoriteMessageMapper, favoriteService);
 
-        Map<String, Object> payload = Map.of(
-                "notes", List.of(),
-                "collections", List.of(),
-                "messages", List.of(Map.of(
-                        "clientRequestId", "client-1",
-                        "flashNoteId", 9L,
-                        "content", "hello",
-                        "createdAt", "2026-03-27T10:00:00"
-                )),
-                "favorites", List.of()
-        );
+        SyncPushRequest.MessagePushDto msg = new SyncPushRequest.MessagePushDto();
+        msg.setClientRequestId("client-1");
+        msg.setFlashNoteId(9L);
+        msg.setContent("hello");
+        msg.setCreatedAt("2026-03-27T10:00:00");
+        SyncPushRequest payload = buildRequest(List.of(), List.of(), List.of(msg), List.of());
 
         Map<String, Object> result = syncService.push("alice", payload);
         Map<?, ?> processed = (Map<?, ?>) result.get("processed");

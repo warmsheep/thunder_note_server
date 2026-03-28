@@ -1,5 +1,6 @@
 package com.flashnote.message.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.flashnote.message.dto.MessageMergeRequest;
 import com.flashnote.message.entity.Message;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -7,7 +8,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 
 public interface MessageService {
-    List<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit);
+    IPage<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit);
 
     Message sendMessage(String username, Message message);
     

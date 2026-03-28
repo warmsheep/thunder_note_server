@@ -1,6 +1,8 @@
 package com.flashnote.message.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.flashnote.auth.entity.User;
 import com.flashnote.auth.mapper.UserMapper;
 import com.flashnote.common.exception.BusinessException;
@@ -19,7 +21,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -57,7 +58,7 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
-    public List<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit) {
+    public IPage<Message> listMessages(String username, Long flashNoteId, Long peerUserId, Integer page, Integer limit) {
         Long userId = getRequiredUserId(username);
         LambdaQueryWrapper<Message> queryWrapper = new LambdaQueryWrapper<Message>()
                 .and(wrapper -> wrapper
@@ -81,13 +82,10 @@ public class MessageServiceImpl implements MessageService {
 
         int actualLimit = (limit != null && limit > 0) ? limit : 20;
         int actualPage = (page != null && page > 0) ? page : 1;
-        int offset = (actualPage - 1) * actualLimit;
 
-        queryWrapper.last("LIMIT " + actualLimit + " OFFSET " + offset);
-
-        List<Message> messages = messageMapper.selectList(queryWrapper);
-        Collections.reverse(messages);
-        return messages;
+        Page<Message> pageObj = new Page<>(actualPage, actualLimit);
+        messageMapper.selectPage(pageObj, queryWrapper);
+        return pageObj;
     }
 
     @Override

@@ -14,8 +14,10 @@ import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.flashnote.service.FlashNoteService;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
+import com.flashnote.sync.dto.SyncPushRequest;
 import com.flashnote.sync.service.SyncService;
 import com.flashnote.user.service.UserService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class SyncServiceImpl implements SyncService {
     private final FlashNoteService flashNoteService;
     private final CollectionService collectionService;
@@ -80,35 +83,14 @@ public class SyncServiceImpl implements SyncService {
     }
 
     @Override
-    public Map<String, Object> push(String username, Map<String, Object> payload) {
+    public Map<String, Object> push(String username, SyncPushRequest payload) {
         Map<String, Object> result = new HashMap<>();
-        
         Long userId = getUserId(username);
-        
-        int notesProcessed = 0;
-        int collectionsProcessed = 0;
-        int messagesProcessed = 0;
-        int favoritesProcessed = 0;
-        
-        List<Map<String, Object>> notes = (List<Map<String, Object>>) payload.get("notes");
-        if (notes != null) {
-            notesProcessed = processNotes(userId, notes);
-        }
-        
-        List<Map<String, Object>> collections = (List<Map<String, Object>>) payload.get("collections");
-        if (collections != null) {
-            collectionsProcessed = processCollections(userId, collections);
-        }
-        
-        List<Map<String, Object>> messages = (List<Map<String, Object>>) payload.get("messages");
-        if (messages != null) {
-            messagesProcessed = processMessages(userId, messages);
-        }
 
-        List<Map<String, Object>> favorites = (List<Map<String, Object>>) payload.get("favorites");
-        if (favorites != null) {
-            favoritesProcessed = processFavorites(userId, favorites);
-        }
+        int notesProcessed = processNotes(userId, payload.getNotes());
+        int collectionsProcessed = processCollections(userId, payload.getCollections());
+        int messagesProcessed = processMessages(userId, payload.getMessages());
+        int favoritesProcessed = processFavorites(userId, payload.getFavorites());
 
         result.put("accepted", true);
         result.put("processed", Map.of(
@@ -121,49 +103,37 @@ public class SyncServiceImpl implements SyncService {
         return result;
     }
 
-    private int processNotes(Long userId, List<Map<String, Object>> notes) {
+    private int processNotes(Long userId, List<SyncPushRequest.NotePushDto> notes) {
+        if (notes == null) return 0;
         int count = 0;
-        for (Map<String, Object> noteData : notes) {
-            Object idObj = noteData.get("id");
-            if (idObj == null) {
+        for (SyncPushRequest.NotePushDto noteData : notes) {
+            if (noteData.getId() == null) {
                 continue;
             }
-            Long noteId = ((Number) idObj).longValue();
-            
             FlashNote existing = flashNoteMapper.selectOne(new LambdaQueryWrapper<FlashNote>()
-                    .eq(FlashNote::getId, noteId)
+                    .eq(FlashNote::getId, noteData.getId())
                     .eq(FlashNote::getUserId, userId));
-            
+
             if (existing != null) {
-                if (noteData.get("title") != null) {
-                    existing.setTitle((String) noteData.get("title"));
+                if (noteData.getTitle() != null) {
+                    existing.setTitle(noteData.getTitle());
                 }
-                if (noteData.get("content") != null) {
-                    existing.setContent((String) noteData.get("content"));
+                if (noteData.getContent() != null) {
+                    existing.setContent(noteData.getContent());
                 }
-                if (noteData.get("tags") != null) {
-                    existing.setTags((String) noteData.get("tags"));
+                if (noteData.getTags() != null) {
+                    existing.setTags(noteData.getTags());
                 }
-                Object deletedValue = noteData.get("is_deleted");
-                if (deletedValue == null) {
-                    deletedValue = noteData.get("deleted");
-                }
-                if (deletedValue instanceof Boolean deleted) {
-                    existing.setDeleted(deleted);
-                }
+                existing.setDeleted(noteData.resolveDeleted());
                 flashNoteMapper.updateById(existing);
             } else {
                 FlashNote note = new FlashNote();
-                note.setId(noteId);
+                note.setId(noteData.getId());
                 note.setUserId(userId);
-                note.setTitle((String) noteData.get("title"));
-                note.setContent((String) noteData.get("content"));
-                note.setTags((String) noteData.get("tags"));
-                Object deletedValue = noteData.get("is_deleted");
-                if (deletedValue == null) {
-                    deletedValue = noteData.get("deleted");
-                }
-                note.setDeleted(deletedValue instanceof Boolean deleted ? deleted : false);
+                note.setTitle(noteData.getTitle());
+                note.setContent(noteData.getContent());
+                note.setTags(noteData.getTags());
+                note.setDeleted(noteData.resolveDeleted());
                 flashNoteMapper.insert(note);
             }
             count++;
@@ -171,33 +141,31 @@ public class SyncServiceImpl implements SyncService {
         return count;
     }
 
-    private int processCollections(Long userId, List<Map<String, Object>> collections) {
+    private int processCollections(Long userId, List<SyncPushRequest.CollectionPushDto> collections) {
+        if (collections == null) return 0;
         int count = 0;
-        for (Map<String, Object> collectionData : collections) {
-            Object idObj = collectionData.get("id");
-            if (idObj == null) {
+        for (SyncPushRequest.CollectionPushDto collectionData : collections) {
+            if (collectionData.getId() == null) {
                 continue;
             }
-            Long collectionId = ((Number) idObj).longValue();
-            
             Collection existing = collectionMapper.selectOne(new LambdaQueryWrapper<Collection>()
-                    .eq(Collection::getId, collectionId)
+                    .eq(Collection::getId, collectionData.getId())
                     .eq(Collection::getUserId, userId));
-            
+
             if (existing != null) {
-                if (collectionData.get("name") != null) {
-                    existing.setName((String) collectionData.get("name"));
+                if (collectionData.getName() != null) {
+                    existing.setName(collectionData.getName());
                 }
-                if (collectionData.get("description") != null) {
-                    existing.setDescription((String) collectionData.get("description"));
+                if (collectionData.getDescription() != null) {
+                    existing.setDescription(collectionData.getDescription());
                 }
                 collectionMapper.updateById(existing);
             } else {
                 Collection collection = new Collection();
-                collection.setId(collectionId);
+                collection.setId(collectionData.getId());
                 collection.setUserId(userId);
-                collection.setName((String) collectionData.get("name"));
-                collection.setDescription((String) collectionData.get("description"));
+                collection.setName(collectionData.getName());
+                collection.setDescription(collectionData.getDescription());
                 collectionMapper.insert(collection);
             }
             count++;
@@ -205,12 +173,12 @@ public class SyncServiceImpl implements SyncService {
         return count;
     }
 
-    private int processMessages(Long userId, List<Map<String, Object>> messages) {
+    private int processMessages(Long userId, List<SyncPushRequest.MessagePushDto> messages) {
+        if (messages == null) return 0;
         int count = 0;
-        for (Map<String, Object> messageData : messages) {
-            Object idObj = messageData.get("id");
-            String clientRequestId = stringValue(messageData.get("clientRequestId"));
-            Long messageId = idObj instanceof Number ? ((Number) idObj).longValue() : null;
+        for (SyncPushRequest.MessagePushDto msgData : messages) {
+            Long messageId = msgData.getId();
+            String clientRequestId = msgData.getClientRequestId();
 
             Message existing = null;
             if (messageId != null) {
@@ -229,21 +197,19 @@ public class SyncServiceImpl implements SyncService {
                 if (!userId.equals(existing.getSenderId()) && !userId.equals(existing.getReceiverId())) {
                     continue;
                 }
-                if (messageData.get("content") != null) {
-                    existing.setContent((String) messageData.get("content"));
+                if (msgData.getContent() != null) {
+                    existing.setContent(msgData.getContent());
                 }
-                if (messageData.get("read_status") != null) {
-                    existing.setReadStatus((Boolean) messageData.get("read_status"));
+                Boolean readStatus = msgData.getReadStatus();
+                if (readStatus != null) {
+                    existing.setReadStatus(readStatus);
                 }
-                Object flashNoteIdValue = messageData.get("flash_note_id");
-                if (flashNoteIdValue == null) {
-                    flashNoteIdValue = messageData.get("flashNoteId");
+                Long flashNoteId = msgData.getFlashNoteId();
+                if (flashNoteId != null) {
+                    existing.setFlashNoteId(flashNoteId);
                 }
-                if (flashNoteIdValue instanceof Number flashNoteId) {
-                    existing.setFlashNoteId(flashNoteId.longValue());
-                }
-                if (messageData.get("role") != null) {
-                    existing.setRole((String) messageData.get("role"));
+                if (msgData.getRole() != null) {
+                    existing.setRole(msgData.getRole());
                 }
                 if (clientRequestId != null && !clientRequestId.isBlank()) {
                     existing.setClientRequestId(clientRequestId);
@@ -254,65 +220,52 @@ public class SyncServiceImpl implements SyncService {
                 if (messageId != null) {
                     message.setId(messageId);
                 }
-                Object senderIdObj = messageData.get("senderId");
-                if (senderIdObj instanceof Number senderIdNumber) {
-                    message.setSenderId(senderIdNumber.longValue());
+                if (msgData.getSenderId() != null) {
+                    message.setSenderId(msgData.getSenderId());
                 } else {
                     message.setSenderId(userId);
                 }
-                Object receiverIdObj = messageData.get("receiver_id");
-                if (receiverIdObj == null) {
-                    receiverIdObj = messageData.get("receiverId");
-                }
-                if (receiverIdObj != null) {
-                    message.setReceiverId(((Number) receiverIdObj).longValue());
+                Long receiverId = msgData.getReceiverId();
+                if (receiverId != null) {
+                    message.setReceiverId(receiverId);
                 } else {
                     message.setReceiverId(userId);
                 }
                 if (clientRequestId != null && !clientRequestId.isBlank()) {
                     message.setClientRequestId(clientRequestId);
                 }
-                message.setContent((String) messageData.get("content"));
-                message.setReadStatus(messageData.get("read_status") != null ? (Boolean) messageData.get("read_status") : false);
-                Object readStatusValue = messageData.get("readStatus");
-                if (readStatusValue instanceof Boolean readStatus) {
-                    message.setReadStatus(readStatus);
+                message.setContent(msgData.getContent());
+                Boolean readStatus = msgData.getReadStatus();
+                message.setReadStatus(readStatus != null ? readStatus : false);
+                Long flashNoteId = msgData.getFlashNoteId();
+                if (flashNoteId != null) {
+                    message.setFlashNoteId(flashNoteId);
                 }
-                Object flashNoteIdValue = messageData.get("flash_note_id");
-                if (flashNoteIdValue == null) {
-                    flashNoteIdValue = messageData.get("flashNoteId");
-                }
-                if (flashNoteIdValue instanceof Number flashNoteId) {
-                    message.setFlashNoteId(flashNoteId.longValue());
-                }
-                if (messageData.get("role") != null) {
-                    message.setRole((String) messageData.get("role"));
+                if (msgData.getRole() != null) {
+                    message.setRole(msgData.getRole());
                 } else {
                     message.setRole("user");
                 }
-                if (messageData.get("mediaType") != null) {
-                    message.setMediaType((String) messageData.get("mediaType"));
+                if (msgData.getMediaType() != null) {
+                    message.setMediaType(msgData.getMediaType());
                 }
-                if (messageData.get("mediaUrl") != null) {
-                    message.setMediaUrl((String) messageData.get("mediaUrl"));
+                if (msgData.getMediaUrl() != null) {
+                    message.setMediaUrl(msgData.getMediaUrl());
                 }
-                Object mediaDurationValue = messageData.get("mediaDuration");
-                if (mediaDurationValue instanceof Number mediaDuration) {
-                    message.setMediaDuration(mediaDuration.intValue());
+                if (msgData.getMediaDuration() != null) {
+                    message.setMediaDuration(msgData.getMediaDuration());
                 }
-                if (messageData.get("thumbnailUrl") != null) {
-                    message.setThumbnailUrl((String) messageData.get("thumbnailUrl"));
+                if (msgData.getThumbnailUrl() != null) {
+                    message.setThumbnailUrl(msgData.getThumbnailUrl());
                 }
-                if (messageData.get("fileName") != null) {
-                    message.setFileName((String) messageData.get("fileName"));
+                if (msgData.getFileName() != null) {
+                    message.setFileName(msgData.getFileName());
                 }
-                Object fileSizeValue = messageData.get("fileSize");
-                if (fileSizeValue instanceof Number fileSize) {
-                    message.setFileSize(fileSize.longValue());
+                if (msgData.getFileSize() != null) {
+                    message.setFileSize(msgData.getFileSize());
                 }
-                Object createdAtValue = messageData.get("createdAt");
-                if (createdAtValue instanceof String createdAt && !createdAt.isBlank()) {
-                    message.setCreatedAt(LocalDateTime.parse(createdAt));
+                if (msgData.getCreatedAt() != null && !msgData.getCreatedAt().isBlank()) {
+                    message.setCreatedAt(LocalDateTime.parse(msgData.getCreatedAt()));
                 }
                 messageMapper.insert(message);
             }
@@ -321,26 +274,15 @@ public class SyncServiceImpl implements SyncService {
         return count;
     }
 
-    private String stringValue(Object rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-        String stringValue = String.valueOf(rawValue).trim();
-        return stringValue.isEmpty() ? null : stringValue;
-    }
-
-    private int processFavorites(Long userId, List<Map<String, Object>> favorites) {
+    private int processFavorites(Long userId, List<SyncPushRequest.FavoritePushDto> favorites) {
+        if (favorites == null) return 0;
         int count = 0;
-        for (Map<String, Object> favoriteData : favorites) {
-            Object messageIdValue = favoriteData.get("messageId");
-            if (messageIdValue == null) {
-                messageIdValue = favoriteData.get("message_id");
-            }
-            if (!(messageIdValue instanceof Number messageIdNumber)) {
+        for (SyncPushRequest.FavoritePushDto favData : favorites) {
+            Long messageId = favData.getMessageId();
+            if (messageId == null) {
                 continue;
             }
 
-            Long messageId = messageIdNumber.longValue();
             Message message = messageMapper.selectById(messageId);
             if (message == null) {
                 continue;
@@ -358,7 +300,8 @@ public class SyncServiceImpl implements SyncService {
                 favoriteMessage.setMessageId(messageId);
                 try {
                     favoriteMessageMapper.insert(favoriteMessage);
-                } catch (DuplicateKeyException ignored) {
+                } catch (DuplicateKeyException e) {
+                    log.debug("Favorite already synced for userId={}, messageId={}", userId, messageId);
                 }
             }
             count++;

@@ -13,6 +13,7 @@ import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.message.entity.Message;
 import com.flashnote.message.mapper.MessageMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DuplicateKeyException;
 
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@Slf4j
 public class FavoriteServiceImpl implements FavoriteService {
     private static final long COLLECTION_BOX_NOTE_ID = -1L;
     private static final String COLLECTION_BOX_TITLE = "收集箱";
@@ -71,7 +73,8 @@ public class FavoriteServiceImpl implements FavoriteService {
             favorite.setMessageId(messageId);
             try {
                 favoriteMessageMapper.insert(favorite);
-            } catch (DuplicateKeyException ignored) {
+            } catch (DuplicateKeyException e) {
+                log.debug("Favorite already exists for userId={}, messageId={}", userId, messageId);
                 favorite = favoriteMessageMapper.selectOne(new LambdaQueryWrapper<FavoriteMessage>()
                         .eq(FavoriteMessage::getUserId, userId)
                         .eq(FavoriteMessage::getMessageId, messageId));

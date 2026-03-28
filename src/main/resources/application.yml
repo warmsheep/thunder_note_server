@@ -1,19 +1,19 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: thunder-note-server
   datasource:
-    url: jdbc:postgresql://localhost:15432/thunder_note
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${NOTE_DB_HOST:localhost}:${NOTE_DB_PORT:15432}/${NOTE_DB_NAME:thunder_note}
+    username: ${NOTE_DB_USERNAME:postgres}
+    password: ${NOTE_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
   data:
     redis:
-      host: localhost
-      port: 6379
-      database: 0
+      host: ${NOTE_REDIS_HOST:localhost}
+      port: ${NOTE_REDIS_PORT:6379}
+      database: ${NOTE_REDIS_DATABASE:0}
       timeout: 5s
   flyway:
     enabled: true
@@ -37,7 +37,8 @@ mybatis-plus:
 
 security:
   jwt:
-    secret: thunder-note-super-secure-jwt-secret-key-please-change-now-2026
+    # 生产环境必须通过环境变量 JWT_SECRET 设置，使用本地默认值时请替换为随机密钥
+    secret: ${NOTE_JWT_SECRET:thunder-note-super-secure-jwt-secret-key-please-change-now-2026}
     issuer: thunder-note-server
     access-expiration: 3600000
     refresh-expiration: 604800000
@@ -45,15 +46,29 @@ security:
     auto-renew-threshold: 86400000
 
 minio:
-  endpoint: http://localhost:9000
-  accessKey: minioadmin
-  secretKey: minioadmin
-  bucket: thunder-note
+  endpoint: ${NOTE_MINIO_ENDPOINT:http://localhost:9000}
+  accessKey: ${NOTE_MINIO_ACCESS_KEY:minioadmin}
+  secretKey: ${NOTE_MINIO_SECRET_KEY:minioadmin}
+  bucket: ${NOTE_MINIO_BUCKET:thunder-note}
+
+# CORS 白名单，多个来源用逗号分隔
+cors:
+  allowed-origins: ${NOTE_CORS_ORIGINS:http://localhost:*}
+
+# Actuator 安全配置：仅暴露健康检查和基本信息
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
 
 logging:
   level:
     root: info
-    com.flashnote: debug
+    com.flashnote: ${NOTE_LOG_LEVEL:debug}
   file:
     name: logs/thunder-note.log
   logback:
