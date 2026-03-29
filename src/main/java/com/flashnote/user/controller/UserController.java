@@ -7,6 +7,7 @@ import com.flashnote.user.dto.ContactUserDto;
 import com.flashnote.user.dto.FriendRequestActionRequest;
 import com.flashnote.user.dto.FriendRequestCreateRequest;
 import com.flashnote.user.dto.FriendRequestDto;
+import com.flashnote.user.dto.UserProfileResponse;
 import com.flashnote.user.entity.UserProfile;
 import com.flashnote.user.service.UserService;
 import jakarta.validation.Valid;
@@ -33,8 +34,8 @@ public class UserController {
     }
 
     @PostMapping("/profile")
-    public ApiResponse<UserProfile> getProfile(Authentication authentication) {
-        return ApiResponse.success(userService.getProfile(authentication.getName()));
+    public ApiResponse<UserProfileResponse> getProfile(Authentication authentication) {
+        return ApiResponse.success(toResponse(userService.getProfile(authentication.getName())));
     }
 
     @GetMapping("/contacts")
@@ -94,14 +95,30 @@ public class UserController {
     }
 
     @PutMapping("/profile")
-    public ApiResponse<UserProfile> updateProfile(Authentication authentication,
-                                                  @RequestBody UserProfile profile) {
-        return ApiResponse.success(userService.updateProfile(authentication.getName(), profile));
+    public ApiResponse<UserProfileResponse> updateProfile(Authentication authentication,
+                                                   @RequestBody UserProfile profile) {
+        return ApiResponse.success(toResponse(userService.updateProfile(authentication.getName(), profile)));
     }
 
     @PutMapping("/avatar")
     public ApiResponse<String> updateAvatar(Authentication authentication,
-                                         @Valid @RequestBody AvatarUpdateRequest request) {
+                                          @Valid @RequestBody AvatarUpdateRequest request) {
         return ApiResponse.success(userService.updateAvatar(authentication.getName(), request.getAvatar()));
+    }
+
+    private UserProfileResponse toResponse(UserProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+        UserProfileResponse response = new UserProfileResponse();
+        response.setId(profile.getId());
+        response.setUserId(profile.getUserId());
+        response.setBio(profile.getBio());
+        response.setPreferencesJson(profile.getPreferencesJson());
+        response.setCreatedAt(profile.getCreatedAt());
+        response.setUpdatedAt(profile.getUpdatedAt());
+        response.setAvatar(profile.getAvatar());
+        response.setNickname(profile.getNickname());
+        return response;
     }
 }

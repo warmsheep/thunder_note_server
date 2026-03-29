@@ -1,6 +1,7 @@
 package com.flashnote.collection.controller;
 
 import com.flashnote.collection.dto.CollectionCreateRequest;
+import com.flashnote.collection.dto.CollectionResponse;
 import com.flashnote.collection.dto.CollectionUpdateRequest;
 import com.flashnote.collection.entity.Collection;
 import com.flashnote.collection.service.CollectionService;
@@ -28,27 +29,43 @@ public class CollectionController {
     }
 
     @PostMapping("/list")
-    public ApiResponse<List<Collection>> list(Authentication authentication) {
-        return ApiResponse.success(collectionService.listCollections(authentication.getName()));
+    public ApiResponse<List<CollectionResponse>> list(Authentication authentication) {
+        return ApiResponse.success(collectionService.listCollections(authentication.getName()).stream()
+                .map(this::toResponse)
+                .toList());
     }
 
     @PostMapping
-    public ApiResponse<Collection> create(Authentication authentication,
-                                         @Valid @RequestBody CollectionCreateRequest request) {
-        return ApiResponse.success(collectionService.createCollection(authentication.getName(), request));
+    public ApiResponse<CollectionResponse> create(Authentication authentication,
+                                          @Valid @RequestBody CollectionCreateRequest request) {
+        return ApiResponse.success(toResponse(collectionService.createCollection(authentication.getName(), request)));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<Collection> update(Authentication authentication,
-                                          @PathVariable @Positive Long id,
-                                          @Valid @RequestBody CollectionUpdateRequest request) {
-        return ApiResponse.success(collectionService.updateCollection(authentication.getName(), id, request));
+    public ApiResponse<CollectionResponse> update(Authentication authentication,
+                                           @PathVariable @Positive Long id,
+                                           @Valid @RequestBody CollectionUpdateRequest request) {
+        return ApiResponse.success(toResponse(collectionService.updateCollection(authentication.getName(), id, request)));
     }
 
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(Authentication authentication,
-                                   @PathVariable @Positive Long id) {
+                                    @PathVariable @Positive Long id) {
         collectionService.deleteCollection(authentication.getName(), id);
         return ApiResponse.success("Deleted", null);
+    }
+
+    private CollectionResponse toResponse(Collection collection) {
+        if (collection == null) {
+            return null;
+        }
+        CollectionResponse response = new CollectionResponse();
+        response.setId(collection.getId());
+        response.setUserId(collection.getUserId());
+        response.setName(collection.getName());
+        response.setDescription(collection.getDescription());
+        response.setCreatedAt(collection.getCreatedAt());
+        response.setUpdatedAt(collection.getUpdatedAt());
+        return response;
     }
 }

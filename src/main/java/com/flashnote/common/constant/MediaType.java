@@ -10,6 +10,8 @@ public enum MediaType {
 
     TEXT(""),
     IMAGE("[图片]"),
+    GIF("[图片]"),
+    WEBP("[图片]"),
     VIDEO("[视频]"),
     VOICE("[语音]"),
     FILE("[文件]"),
