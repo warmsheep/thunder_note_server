@@ -21,16 +21,36 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class FileServiceImpl implements FileService {
     private static final Logger log = LoggerFactory.getLogger(FileServiceImpl.class);
-    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+    private static final long MAX_FILE_SIZE = 200L * 1024 * 1024;
     private static final Set<String> ALLOWED_TYPES = Set.of(
             "image/jpeg", "image/png", "image/gif", "image/webp",
-            "video/mp4", "audio/mpeg", "audio/mp4", "application/pdf"
+            "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/webm",
+            "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/webm", "audio/ogg", "audio/aac", "audio/3gpp", "audio/amr",
+            "application/pdf", "application/octet-stream",
+            "text/plain", "text/markdown", "text/x-markdown", "text/html", "text/css", "text/javascript", "application/javascript", "application/json", "application/xml", "text/xml",
+            "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/epub+zip", "application/x-mobipocket-ebook", "application/vnd.amazon.ebook",
+            "application/zip", "application/x-zip-compressed", "application/x-7z-compressed", "application/x-rar-compressed", "application/gzip", "application/x-tar",
+            "application/x-msdownload", "application/x-dosexec", "application/x-msi", "application/vnd.android.package-archive", "application/x-debian-package", "application/x-rpm"
+    );
+    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+            "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg",
+            "mp4", "mov", "avi", "mkv", "webm", "3gp", "m4v",
+            "mp3", "m4a", "wav", "ogg", "aac", "amr", "opus",
+            "pdf", "md", "markdown", "txt", "rtf", "epub", "mobi", "azw3",
+            "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv",
+            "zip", "rar", "7z", "gz", "tar", "tgz",
+            "java", "py", "m", "mm", "swift", "js", "ts", "sql", "php", "html", "htm", "css", "cpp", "cc", "cxx", "c", "cs", "kt", "kts", "go", "rs", "sh", "xml", "json", "yml", "yaml",
+            "exe", "dll", "dmg", "deb", "rpm", "ipa", "apk"
     );
     private final MinioClient minioClient;
     private final MinioConfig minioConfig;
@@ -48,9 +68,9 @@ public class FileServiceImpl implements FileService {
     public FileUploadResult upload(String username, MultipartFile file) {
         try {
             if (file.getSize() > MAX_FILE_SIZE) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "File size exceeds 10MB limit");
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "File size exceeds 200MB limit");
             }
-            if (!ALLOWED_TYPES.contains(file.getContentType())) {
+            if (!isAllowedUpload(file)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "File type not allowed");
             }
             Long userId = currentUserService.getRequiredUserId(username);
@@ -65,7 +85,15 @@ public class FileServiceImpl implements FileService {
                     .build());
 
             return new FileUploadResult(objectName, file.getOriginalFilename());
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (Exception ex) {
+            log.error("File upload failed: username={}, fileName={}, contentType={}, size={}",
+                    username,
+                    file == null ? null : file.getOriginalFilename(),
+                    file == null ? null : file.getContentType(),
+                    file == null ? null : file.getSize(),
+                    ex);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "File upload failed");
         }
     }
@@ -103,6 +131,19 @@ public class FileServiceImpl implements FileService {
             return "";
         }
         return fileName.substring(fileName.lastIndexOf('.'));
+    }
+
+    private boolean isAllowedUpload(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && ALLOWED_TYPES.contains(contentType)) {
+            return true;
+        }
+        String extension = getFileExtension(file.getOriginalFilename());
+        if (extension.isBlank()) {
+            return false;
+        }
+        String normalized = extension.startsWith(".") ? extension.substring(1) : extension;
+        return ALLOWED_EXTENSIONS.contains(normalized.toLowerCase(Locale.ROOT));
     }
 
     private boolean containsTraversal(String path) {

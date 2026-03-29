@@ -63,23 +63,111 @@ class FileServiceImplTest {
     @Test
     void upload_withExceedSize_throwsBadRequest() {
         MultipartFile file = mock(MultipartFile.class);
-        when(file.getSize()).thenReturn(11L * 1024 * 1024);
+        when(file.getSize()).thenReturn(201L * 1024 * 1024);
         when(file.getContentType()).thenReturn("image/png");
 
         FileServiceImpl service = new FileServiceImpl(mock(MinioClient.class), mockMinioConfig(), null, mock(CurrentUserService.class));
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.upload("alice", file));
-        assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), ex.getCode());
-        assertEquals("File upload failed", ex.getMessage());
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), ex.getCode());
+        assertEquals("File size exceeds 200MB limit", ex.getMessage());
     }
 
     @Test
-    void upload_withInvalidType_throwsInternalMappedError() {
+    void upload_withUnknownTypeAndExtension_preservesBadRequest() {
         MultipartFile file = mock(MultipartFile.class);
         when(file.getSize()).thenReturn(100L);
-        when(file.getContentType()).thenReturn("text/plain");
+        when(file.getContentType()).thenReturn("application/x-unknown-binary");
+        when(file.getOriginalFilename()).thenReturn("payload.bin");
 
         FileServiceImpl service = new FileServiceImpl(mock(MinioClient.class), mockMinioConfig(), null, mock(CurrentUserService.class));
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.upload("alice", file));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), ex.getCode());
+        assertEquals("File type not allowed", ex.getMessage());
+    }
+
+    @Test
+    void upload_withOctetStreamAndPngExtension_succeeds() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioConfig minioConfig = mockMinioConfig();
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.getRequiredUserId("alice")).thenReturn(7L);
+
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.getSize()).thenReturn(1024L);
+        when(file.getContentType()).thenReturn("application/octet-stream");
+        when(file.getOriginalFilename()).thenReturn("photo.png");
+        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
+
+        FileServiceImpl service = new FileServiceImpl(minioClient, minioConfig, null, currentUserService);
+
+        FileUploadResult result = service.upload("alice", file);
+
+        assertNotNull(result);
+        assertEquals("photo.png", result.getOriginalFilename());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    void upload_withMarkdownExtension_succeeds() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioConfig minioConfig = mockMinioConfig();
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.getRequiredUserId("alice")).thenReturn(7L);
+
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.getSize()).thenReturn(1024L);
+        when(file.getContentType()).thenReturn("application/octet-stream");
+        when(file.getOriginalFilename()).thenReturn("notes.md");
+        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
+
+        FileServiceImpl service = new FileServiceImpl(minioClient, minioConfig, null, currentUserService);
+
+        FileUploadResult result = service.upload("alice", file);
+
+        assertNotNull(result);
+        assertEquals("notes.md", result.getOriginalFilename());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    void upload_withApkExtension_succeeds() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioConfig minioConfig = mockMinioConfig();
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.getRequiredUserId("alice")).thenReturn(7L);
+
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.getSize()).thenReturn(1024L);
+        when(file.getContentType()).thenReturn("application/octet-stream");
+        when(file.getOriginalFilename()).thenReturn("installer.apk");
+        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
+
+        FileServiceImpl service = new FileServiceImpl(minioClient, minioConfig, null, currentUserService);
+
+        FileUploadResult result = service.upload("alice", file);
+
+        assertNotNull(result);
+        assertEquals("installer.apk", result.getOriginalFilename());
+        verify(minioClient).putObject(any(PutObjectArgs.class));
+    }
+
+    @Test
+    void upload_whenMinioFails_returnsInternalError() throws Exception {
+        MinioClient minioClient = mock(MinioClient.class);
+        MinioConfig minioConfig = mockMinioConfig();
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.getRequiredUserId("alice")).thenReturn(7L);
+        doThrow(new RuntimeException("minio down")).when(minioClient).putObject(any(PutObjectArgs.class));
+
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.getSize()).thenReturn(1024L);
+        when(file.getContentType()).thenReturn("image/png");
+        when(file.getOriginalFilename()).thenReturn("photo.png");
+        when(file.getInputStream()).thenReturn(new ByteArrayInputStream(new byte[]{1, 2, 3}));
+
+        FileServiceImpl service = new FileServiceImpl(minioClient, minioConfig, null, currentUserService);
 
         BusinessException ex = assertThrows(BusinessException.class, () -> service.upload("alice", file));
         assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), ex.getCode());

@@ -21,8 +21,12 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      max-file-size: 200MB
+      max-request-size: 200MB
+
+tomcat:
+  max-http-form-post-size: 209715200
+  max-swallow-size: 209715200
 
 mybatis-plus:
   global-config:
