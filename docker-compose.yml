@@ -1,0 +1,116 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: thunder-note-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-thunder_note}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - thunder-note-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-thunder_note}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: thunder-note-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - thunder-note-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  minio:
+    image: minio/minio
+    container_name: thunder-note-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    volumes:
+      - thunder-note-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio-init:
+    image: minio/mc
+    container_name: thunder-note-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c '
+      until /usr/bin/mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}; do
+        sleep 2;
+      done;
+      /usr/bin/mc mb --ignore-existing local/${MINIO_BUCKET:-thunder-note};
+      exit 0;
+      '
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: thunder-note-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      NOTE_DB_HOST: postgres
+      NOTE_DB_PORT: 5432
+      NOTE_DB_NAME: ${POSTGRES_DB:-thunder_note}
+      NOTE_DB_USERNAME: ${POSTGRES_USER:-postgres}
+      NOTE_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      NOTE_REDIS_HOST: redis
+      NOTE_REDIS_PORT: 6379
+      NOTE_REDIS_DATABASE: ${NOTE_REDIS_DATABASE:-0}
+      NOTE_MINIO_ENDPOINT: http://minio:9000
+      NOTE_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      NOTE_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      NOTE_MINIO_BUCKET: ${MINIO_BUCKET:-thunder-note}
+      NOTE_JWT_SECRET: ${NOTE_JWT_SECRET:-thunder-note-super-secure-jwt-secret-key-please-change-now-2026}
+      NOTE_CORS_ORIGINS: ${NOTE_CORS_ORIGINS:-http://localhost:*}
+      NOTE_LOG_LEVEL: ${NOTE_LOG_LEVEL:-debug}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  thunder-note-postgres-data:
+  thunder-note-redis-data:
+  thunder-note-minio-data:
