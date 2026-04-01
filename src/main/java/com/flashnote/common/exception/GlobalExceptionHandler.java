@@ -12,10 +12,13 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.io.IOException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -61,8 +64,18 @@ public class GlobalExceptionHandler {
         return jsonResponse(response);
     }
 
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> handleAsyncRequestNotUsableException(AsyncRequestNotUsableException ex) {
+        log.warn("客户端在响应写出期间断开连接: {}", ex.getMessage());
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+        if (isClientAbort(ex)) {
+            log.warn("客户端在响应写出期间断开连接: {}", ex.getMessage());
+            return ResponseEntity.noContent().build();
+        }
         log.error("服务器内部错误", ex);
         ApiResponse<Void> response = ApiResponse.error(ErrorCode.INTERNAL_ERROR.getCode(), "Internal server error");
         logApiErrorResponse(response);
@@ -87,5 +100,33 @@ public class GlobalExceptionHandler {
         } catch (JsonProcessingException e) {
             return String.valueOf(value);
         }
+    }
+
+    private boolean isClientAbort(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof AsyncRequestNotUsableException) {
+                return true;
+            }
+            String className = current.getClass().getName();
+            if (className.endsWith("ClientAbortException")) {
+                return true;
+            }
+            if (current instanceof IOException && containsAbortMessage(current.getMessage())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean containsAbortMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase();
+        return normalized.contains("broken pipe")
+                || normalized.contains("connection reset")
+                || normalized.contains("连接被对方重设");
     }
 }

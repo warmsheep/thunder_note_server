@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 class GlobalExceptionHandlerTest {
 
@@ -37,5 +38,14 @@ class GlobalExceptionHandlerTest {
         assertEquals(MediaType.APPLICATION_JSON, response.getHeaders().getContentType());
         assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), response.getBody().getCode());
         assertEquals("Internal server error", response.getBody().getMessage());
+    }
+
+    @Test
+    void handleAsyncRequestNotUsableException_returnsNoContent() {
+        ResponseEntity<Void> response = handler.handleAsyncRequestNotUsableException(
+                new AsyncRequestNotUsableException("connection reset")
+        );
+
+        assertEquals(204, response.getStatusCode().value());
     }
 }
