@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute, RouterView, RouterLink } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
 
 // D1-W4-01 / W4-02：主壳层
@@ -11,7 +12,20 @@ import { useToast } from '../composables/useToast'
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const contactsStore = useContactsStore()
 const { showSuccess, showError } = useToast()
+
+// D1-W14-05：登录后拉一次 pending 计数；路由切换时静默刷新
+onMounted(() => {
+  if (authStore.isAuthenticated) {
+    contactsStore.fetchPendingCount()
+  }
+})
+watch(() => route.fullPath, () => {
+  if (authStore.isAuthenticated) {
+    contactsStore.fetchPendingCount()
+  }
+})
 
 const userMenuOpen = ref(false)
 function toggleUserMenu() {
@@ -80,12 +94,19 @@ async function handleLogout() {
             aria-haspopup="menu"
             @click.stop="toggleUserMenu"
           >
-            <span class="user-avatar" aria-hidden="true">{{ displayName.slice(0, 1) }}</span>
+            <span class="user-avatar" aria-hidden="true">
+              {{ displayName.slice(0, 1) }}
+              <span v-if="contactsStore.pendingCount > 0" class="trigger-dot" :title="contactsStore.pendingCount + ' 条好友请求'"></span>
+            </span>
             <span class="user-name">{{ displayName }}</span>
           </button>
           <div v-if="userMenuOpen" class="user-menu" role="menu" @click.stop>
             <RouterLink to="/profile" class="user-menu-item" role="menuitem" @click="closeUserMenu">
               我的资料
+            </RouterLink>
+            <RouterLink to="/contacts" class="user-menu-item" role="menuitem" @click="closeUserMenu">
+              <span>联系人</span>
+              <span v-if="contactsStore.pendingCount > 0" class="user-menu-badge">{{ contactsStore.pendingCount }}</span>
             </RouterLink>
             <button
               type="button"
@@ -266,8 +287,39 @@ async function handleLogout() {
 .user-menu-item:hover {
   background: var(--color-bg);
 }
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.user-menu-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+}
 .user-menu-danger {
   color: var(--color-danger);
+}
+.user-avatar {
+  position: relative;
+}
+.trigger-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  border: 2px solid var(--color-topbar-bg);
 }
 
 .content {

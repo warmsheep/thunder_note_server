@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useProfileStore } from '../stores/profile'
+import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
 import { uploadFile } from '../api/files'
 import { buildAvatarUrl } from '../utils/avatarHelpers'
@@ -19,6 +20,7 @@ import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 const profileStore = useProfileStore()
+const contactsStore = useContactsStore()
 const { showSuccess, showError } = useToast()
 
 const avatarInputEl = ref(null)
@@ -253,6 +255,21 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
 
       <section class="card">
         <header class="card-header simple">
+          <h2 class="card-title">入口</h2>
+        </header>
+        <ul class="kv-list">
+          <li class="link-row" @click="$router.push('/contacts')">
+            <span class="kv-label">联系人 / 好友请求</span>
+            <span class="kv-value">
+              <span v-if="contactsStore.pendingCount > 0" class="badge">{{ contactsStore.pendingCount }}</span>
+              <span class="chevron">›</span>
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <header class="card-header simple">
           <h2 class="card-title">设置 / 系统信息</h2>
         </header>
         <ul class="kv-list">
@@ -475,6 +492,31 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
 }
 .kv-list li:last-child {
   border-bottom: none;
+}
+.link-row {
+  cursor: pointer;
+}
+.link-row:hover {
+  background: var(--color-bg);
+}
+.chevron {
+  font-size: 18px;
+  color: var(--color-text-hint);
+  margin-left: 8px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 4px;
 }
 .kv-label {
   font-size: 13px;

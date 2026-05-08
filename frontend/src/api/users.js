@@ -20,3 +20,60 @@ export function updateAvatar(avatarUrl) {
   }
   return apiClient.put('/api/users/avatar', { avatar: String(avatarUrl) })
 }
+
+// D1-W14 联系人与好友请求 API
+// 后端 relationStatus 取值：FRIEND / PENDING_SENT / PENDING_RECEIVED / NONE
+// 联系人列表已包含"我发出的 PENDING_SENT"，"对方发给我的 PENDING_RECEIVED" 走好友请求列表
+
+export function listContacts() {
+  return apiClient.get('/api/users/contacts')
+}
+
+export function searchContacts(keyword) {
+  const k = keyword == null ? '' : String(keyword)
+  // apiClient.get 第二个参数本身就是 params，不要再包一层 { params }
+  return apiClient.get('/api/users/contacts/search', { keyword: k })
+}
+
+export function listFriendRequests() {
+  return apiClient.get('/api/users/contacts/requests')
+}
+
+export function countFriendRequests() {
+  return apiClient.get('/api/users/contacts/requests/count')
+}
+
+export function sendFriendRequest(targetUserId) {
+  if (targetUserId == null) {
+    return Promise.reject(new Error('targetUserId is required'))
+  }
+  return apiClient.post('/api/users/contacts/request', { targetUserId })
+}
+
+export function acceptFriendRequest(requestId) {
+  if (requestId == null) {
+    return Promise.reject(new Error('requestId is required'))
+  }
+  return apiClient.post('/api/users/contacts/request/accept', { requestId })
+}
+
+export function rejectFriendRequest(requestId) {
+  if (requestId == null) {
+    return Promise.reject(new Error('requestId is required'))
+  }
+  return apiClient.post('/api/users/contacts/request/reject', { requestId })
+}
+
+export function cancelFriendRequest(requestId) {
+  if (requestId == null) {
+    return Promise.reject(new Error('requestId is required'))
+  }
+  return apiClient.delete(`/api/users/contacts/request/${requestId}`)
+}
+
+export function deleteContact(contactUserId) {
+  if (contactUserId == null) {
+    return Promise.reject(new Error('contactUserId is required'))
+  }
+  return apiClient.delete(`/api/users/contacts/${contactUserId}`)
+}
