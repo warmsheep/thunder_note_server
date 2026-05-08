@@ -1,1 +1,0 @@
-import{E as e}from"./EmptyState-BoV7kvbr.js";import{_ as t,c as s,g as a,o}from"./index-ChpbpaAi.js";const c={class:"page"},_={__name:"NotesView",setup(r){return(i,p)=>(o(),s("div",c,[a(e,{icon:"⚡",title:"闪记列表",description:"此页将在 D1-W5 接入 /api/messages/list 与新建/编辑/删除闭环"})]))}},d=t(_,[["__scopeId","data-v-e6a4aeed"]]);export{d as default};
