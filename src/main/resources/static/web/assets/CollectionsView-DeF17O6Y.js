@@ -1,1 +1,0 @@
-import{E as e}from"./EmptyState-OdQcf1ea.js";import{_ as t,c as o,g as s,o as c}from"./index-Cx05DjHQ.js";const a={class:"page"},_={__name:"CollectionsView",setup(r){return(i,n)=>(c(),o("div",a,[s(e,{icon:"📂",title:"合集",description:"此页将在后续阶段接入合集列表与详情"})]))}},m=t(_,[["__scopeId","data-v-5e487e8a"]]);export{m as default};

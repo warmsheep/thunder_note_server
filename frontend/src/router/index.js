@@ -4,7 +4,7 @@ import { getTokenStorage } from '@/api/tokenStorage'
 // D1-W4 嵌套路由：MainShell 作为受保护壳，五个 tab 作为 children；
 // /baseline 保留为公开调试入口；/login、/register 公开。
 const router = createRouter({
-  history: createWebHistory('/web/'),
+  history: createWebHistory('/'),
   routes: [
     {
       path: '/baseline',

@@ -35,11 +35,14 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
+                        // 公开 API 与 actuator/health 必须先列出，避免被下面的 /api/** 鉴权规则覆盖
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/actuator/health").permitAll()
-                        // D1-W1-04 / D1-W1-05：放行 Web 静态资源与 SPA fallback 入口，
-                        // 受保护范围仍以 /api/** 为主；/api/** 默认走 .anyRequest().authenticated() 不被影响。
-                        .requestMatchers("/", "/index.html", "/favicon.ico", "/web", "/web/**", "/error").permitAll()
-                        .anyRequest().authenticated())
+                        // D1-W4 调整：SPA 入口从 /web/ 改为根路径 /。
+                        // 反向规则：仅强制鉴权 /api/** 与 /actuator/**，
+                        // 其他所有路径（/、/index.html、/assets/**、SPA 内部路由 /login、/notes 等）默认放行，
+                        // 由 WebStaticResourceConfig 的 SpaFallbackResolver 决定是返回真实静态资源还是 fallback 到 SPA。
+                        .requestMatchers("/api/**", "/actuator/**").authenticated()
+                        .anyRequest().permitAll())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

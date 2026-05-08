@@ -1,0 +1,1 @@
+import{E as e}from"./EmptyState-BoV7kvbr.js";import{_ as t,c as a,g as o,o as s}from"./index-ChpbpaAi.js";const c={class:"page"},r={__name:"FavoritesView",setup(i){return(_,p)=>(s(),a("div",c,[o(e,{icon:"⭐",title:"收藏",description:"此页将在 D1-W7 接入 /api/favorites/list"})]))}},d=t(r,[["__scopeId","data-v-53a8ae66"]]);export{d as default};
