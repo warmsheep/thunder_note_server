@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useFlashNotesStore } from '../stores/flashNotes'
+import { useFavoritesStore } from '../stores/favorites'
 import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
 import { isOwnMessage, isInboxFlashNoteId } from '../utils/messageHelpers'
@@ -23,6 +24,7 @@ const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
 const flashNotesStore = useFlashNotesStore()
+const favoritesStore = useFavoritesStore()
 const authStore = useAuthStore()
 const { showSuccess, showError } = useToast()
 
@@ -75,6 +77,10 @@ onMounted(() => {
   // 列表 store 没加载时顺手拉一下，便于头部显示真实 title/icon
   if (!flashNotesStore.loaded) {
     flashNotesStore.fetchList({ silent: true }).catch(() => {})
+  }
+  // 收藏集 silent 拉一次，便于消息气泡显示当前收藏状态
+  if (!favoritesStore.loaded) {
+    favoritesStore.fetchList({ silent: true }).catch(() => {})
   }
   reload()
 })
@@ -134,6 +140,22 @@ async function handleRetry(clientRequestId) {
     await chatStore.retryFailed(clientRequestId, currentUserId.value)
   } catch (e) {
     showError(e?.serverMessage || e?.message || '重试失败')
+  }
+}
+
+async function handleToggleFavorite(message) {
+  if (!message || message.id == null) return
+  const isFav = favoritesStore.isFavorited(message.id)
+  try {
+    if (isFav) {
+      await favoritesStore.remove(message.id)
+      showSuccess('已取消收藏')
+    } else {
+      await favoritesStore.add(message.id)
+      showSuccess('已收藏')
+    }
+  } catch (e) {
+    showError(e?.serverMessage || e?.message || '操作失败')
   }
 }
 
@@ -235,9 +257,11 @@ function toggleSelectMode() {
           :mine="isOwnMessage(m, currentUserId)"
           :select-mode="chatStore.selectMode"
           :selected="m.id != null && chatStore.selectedIds.has(m.id)"
+          :favorited="m.id != null && favoritesStore.isFavorited(m.id)"
           @toggle-select="(id) => chatStore.toggleSelect(id)"
           @delete="askDeleteSingle"
           @retry="handleRetry"
+          @toggle-favorite="handleToggleFavorite"
         />
       </template>
     </main>

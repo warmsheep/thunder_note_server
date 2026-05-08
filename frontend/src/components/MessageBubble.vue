@@ -10,10 +10,11 @@ const props = defineProps({
   message: { type: Object, required: true },
   mine: { type: Boolean, default: false },
   selectMode: { type: Boolean, default: false },
-  selected: { type: Boolean, default: false }
+  selected: { type: Boolean, default: false },
+  favorited: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['toggle-select', 'delete', 'retry'])
+const emit = defineEmits(['toggle-select', 'delete', 'retry', 'toggle-favorite'])
 
 const m = computed(() => props.message || {})
 
@@ -63,6 +64,15 @@ function timeText(iso) {
           class="action-btn"
           @click="emit('retry', m.clientRequestId)"
         >重试</button>
+        <button
+          v-if="!selectMode && m.id != null"
+          type="button"
+          class="action-btn"
+          :class="{ favored: favorited }"
+          :aria-pressed="favorited ? 'true' : 'false'"
+          :title="favorited ? '取消收藏' : '收藏'"
+          @click="emit('toggle-favorite', m)"
+        >{{ favorited ? '★ 已收藏' : '☆ 收藏' }}</button>
         <button
           v-if="!selectMode && m.id != null"
           type="button"
@@ -174,6 +184,14 @@ function timeText(iso) {
 .action-btn.delete:hover {
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+.action-btn.favored {
+  color: #d97706;
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+.action-btn.favored:hover {
+  border-color: #d97706;
 }
 
 .select-box {
