@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getTokenStorage } from '@/api/tokenStorage'
 
-// D1-W3 起加入登录/注册路由与守卫；W4 落地主壳层后再把 baseline 替换为正式主页面。
+// D1-W4 嵌套路由：MainShell 作为受保护壳，五个 tab 作为 children；
+// /baseline 保留为公开调试入口；/login、/register 公开。
 const router = createRouter({
   history: createWebHistory('/web/'),
   routes: [
     {
-      path: '/',
+      path: '/baseline',
       name: 'baseline',
       component: () => import('../views/BaselineView.vue'),
       meta: { requiresAuth: false }
@@ -22,6 +23,48 @@ const router = createRouter({
       name: 'register',
       component: () => import('../views/RegisterView.vue'),
       meta: { requiresAuth: false, hideForAuthed: true }
+    },
+    {
+      path: '/',
+      component: () => import('../layouts/MainShell.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: '/notes' },
+        {
+          path: 'notes',
+          name: 'notes',
+          component: () => import('../views/NotesView.vue'),
+          meta: { requiresAuth: true }
+        },
+        {
+          path: 'collections',
+          name: 'collections',
+          component: () => import('../views/CollectionsView.vue'),
+          meta: { requiresAuth: true }
+        },
+        {
+          path: 'favorites',
+          name: 'favorites',
+          component: () => import('../views/FavoritesView.vue'),
+          meta: { requiresAuth: true }
+        },
+        {
+          path: 'search',
+          name: 'search',
+          component: () => import('../views/SearchView.vue'),
+          meta: { requiresAuth: true }
+        },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('../views/ProfileView.vue'),
+          meta: { requiresAuth: true }
+        }
+      ]
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/'
     }
   ]
 })
