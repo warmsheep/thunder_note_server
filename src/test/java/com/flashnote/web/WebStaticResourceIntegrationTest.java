@@ -155,4 +155,40 @@ class WebStaticResourceIntegrationTest {
                     "/api/** must not be served by Web SPA fallback");
         }
     }
+
+    @Test
+    void faviconNotFoundReturns404NotInternalError() throws Exception {
+        // 浏览器访问首页后会自动请求 /favicon.ico。
+        // 如果 GlobalExceptionHandler 把 NoResourceFoundException 当作未知 Exception 兜底，
+        // 会返回 200 + ApiResponse{code=50000} 并在日志里打 ERROR 堆栈，导致首页一刷新就刷屏。
+        // 这里断言：没有 favicon 时必须返回 HTTP 404，且不能伪装成 SPA 或 Internal Error。
+        MvcResult result = mockMvc.perform(get("/favicon.ico")).andReturn();
+        int status = result.getResponse().getStatus();
+        assertTrue(status == 404,
+                "GET /favicon.ico without resource must return HTTP 404, got " + status);
+
+        String body = result.getResponse().getContentAsString();
+        if (body != null && !body.isEmpty()) {
+            assertTrue(!body.contains("<div id=\"app\"></div>"),
+                    "favicon 404 body must NOT be SPA index");
+            assertTrue(!body.contains("\"code\":50000"),
+                    "favicon 404 must NOT be wrapped as Internal Error ApiResponse, got: " + body);
+        }
+    }
+
+    @Test
+    void missingWebAssetReturns404NotInternalError() throws Exception {
+        // /web/assets 已被 SecurityConfig 放行，不存在的含点号资源应当走到 ResourceHttpRequestHandler，
+        // 抛 NoResourceFoundException 后由 GlobalExceptionHandler 返回 404，而不是 500 + ApiResponse 兜底。
+        MvcResult result = mockMvc.perform(get("/web/assets/does-not-exist-xyz.js")).andReturn();
+        int status = result.getResponse().getStatus();
+        assertTrue(status == 404,
+                "GET /web/assets/<missing>.js must return 404, got " + status);
+
+        String body = result.getResponse().getContentAsString();
+        if (body != null && !body.isEmpty()) {
+            assertTrue(!body.contains("\"code\":50000"),
+                    "missing /web/assets must NOT be wrapped as Internal Error, got: " + body);
+        }
+    }
 }

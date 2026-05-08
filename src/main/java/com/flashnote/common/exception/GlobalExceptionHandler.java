@@ -8,6 +8,7 @@ import com.flashnote.common.response.ErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.io.IOException;
 
@@ -68,6 +70,22 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Void> handleAsyncRequestNotUsableException(AsyncRequestNotUsableException ex) {
         log.warn("客户端在响应写出期间断开连接: {}", ex.getMessage());
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 静态资源不存在（如浏览器自动请求 /favicon.ico、误访问 /web/assets/xxx.js 等）时，
+     * Spring 6.1+ 抛出 NoResourceFoundException。这类异常属于客户端层面的 404，
+     * 不应被 fallback 到 Exception 兜底打 ERROR 级别堆栈，否则首页一刷新就会刷一行
+     * "服务器内部错误" 误报。
+     *
+     * 这里统一返回 HTTP 404 空响应，并以 DEBUG 级别记录路径，避免日志噪音。
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
+        if (log.isDebugEnabled()) {
+            log.debug("静态资源未找到: {}", ex.getResourcePath());
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
     @ExceptionHandler(Exception.class)
