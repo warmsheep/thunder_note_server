@@ -18,16 +18,37 @@ export function listMessages({ flashNoteId, page = 1, limit = 30, peerUserId } =
   })
 }
 
-export function sendMessage({ flashNoteId, content, clientRequestId, role = 'user' } = {}) {
+export function sendMessage({
+  flashNoteId,
+  content,
+  clientRequestId,
+  role = 'user',
+  mediaType = null,
+  mediaUrl = null,
+  fileName = null,
+  fileSize = null,
+  mediaDuration = null,
+  thumbnailUrl = null
+} = {}) {
   if (flashNoteId == null) {
     return Promise.reject(new Error('flashNoteId is required'))
   }
-  return apiClient.post('/api/messages', {
+  const body = {
     flashNoteId,
     content: content == null ? '' : String(content),
     clientRequestId: clientRequestId || null,
     role
-  })
+  }
+  // 仅在有媒体时附带媒体字段，避免对纯文本消息引入冗余 null
+  if (mediaType) {
+    body.mediaType = mediaType
+    body.mediaUrl = mediaUrl
+    body.fileName = fileName
+    body.fileSize = fileSize
+    body.mediaDuration = mediaDuration
+    body.thumbnailUrl = thumbnailUrl
+  }
+  return apiClient.post('/api/messages', body)
 }
 
 export function deleteMessage(id) {

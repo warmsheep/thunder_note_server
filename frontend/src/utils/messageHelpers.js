@@ -40,7 +40,19 @@ export function newClientRequestId() {
 }
 
 // 创建 optimistic 消息：status='pending'，等 server 返回后被替换。
-export function createOptimisticMessage({ flashNoteId, content, clientRequestId, currentUserId, role = 'user' }) {
+export function createOptimisticMessage({
+  flashNoteId,
+  content,
+  clientRequestId,
+  currentUserId,
+  role = 'user',
+  mediaType = null,
+  mediaUrl = null,
+  fileName = null,
+  fileSize = null,
+  mediaDuration = null,
+  thumbnailUrl = null
+}) {
   return {
     id: null,
     senderId: currentUserId,
@@ -51,8 +63,12 @@ export function createOptimisticMessage({ flashNoteId, content, clientRequestId,
     createdAt: new Date().toISOString(),
     clientRequestId,
     payload: null,
-    mediaType: null,
-    mediaUrl: null,
+    mediaType,
+    mediaUrl,
+    fileName,
+    fileSize,
+    mediaDuration,
+    thumbnailUrl,
     __status: 'pending',
     __local: true
   }

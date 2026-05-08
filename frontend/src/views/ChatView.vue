@@ -30,6 +30,8 @@ const { showSuccess, showError } = useToast()
 
 const composerRef = ref(null)
 const scrollerRef = ref(null)
+const uploadProgress = ref(0)
+const uploading = ref(false)
 
 const flashNoteId = computed(() => Number(route.params.flashNoteId))
 
@@ -268,7 +270,8 @@ function toggleSelectMode() {
 
     <MessageComposer
       ref="composerRef"
-      :busy="chatStore.sending"
+      :busy="chatStore.sending || uploading"
+      :upload-progress="uploadProgress"
       @submit="handleSend"
     />
 

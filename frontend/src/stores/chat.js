@@ -87,9 +87,10 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async send({ content, currentUserId }) {
+    async send({ content, currentUserId, media = null }) {
       const trimmed = (content || '').trim()
-      if (!trimmed) {
+      const hasMedia = Boolean(media && media.mediaType)
+      if (!trimmed && !hasMedia) {
         throw new Error('消息内容不能为空')
       }
       if (this.flashNoteId == null) {
@@ -100,7 +101,13 @@ export const useChatStore = defineStore('chat', {
         flashNoteId: this.flashNoteId,
         content: trimmed,
         clientRequestId: cr,
-        currentUserId
+        currentUserId,
+        mediaType: hasMedia ? media.mediaType : null,
+        mediaUrl: hasMedia ? media.mediaUrl : null,
+        fileName: hasMedia ? media.fileName : null,
+        fileSize: hasMedia ? media.fileSize : null,
+        mediaDuration: hasMedia ? media.mediaDuration : null,
+        thumbnailUrl: hasMedia ? media.thumbnailUrl : null
       })
       this.messages = [...this.messages, optimistic]
       this.sending = true
@@ -109,7 +116,13 @@ export const useChatStore = defineStore('chat', {
           flashNoteId: this.flashNoteId,
           content: trimmed,
           clientRequestId: cr,
-          role: 'user'
+          role: 'user',
+          mediaType: hasMedia ? media.mediaType : null,
+          mediaUrl: hasMedia ? media.mediaUrl : null,
+          fileName: hasMedia ? media.fileName : null,
+          fileSize: hasMedia ? media.fileSize : null,
+          mediaDuration: hasMedia ? media.mediaDuration : null,
+          thumbnailUrl: hasMedia ? media.thumbnailUrl : null
         })
         this.messages = replaceOptimisticByClientId(this.messages, serverMessage)
         this.total += 1

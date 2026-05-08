@@ -47,7 +47,8 @@ function timeText(iso) {
           <p v-if="m.payload.summary" class="card-summary">{{ m.payload.summary }}</p>
         </template>
         <template v-else-if="isMedia">
-          <p class="media-placeholder">[{{ m.mediaType }}]{{ m.fileName ? ' ' + m.fileName : '' }}</p>
+          <MediaPreview :message="m" />
+          <p v-if="m.content" class="text caption">{{ m.content }}</p>
         </template>
         <template v-else>
           <p class="text">{{ m.content }}</p>
@@ -144,11 +145,10 @@ function timeText(iso) {
   font-size: 13px;
   color: var(--color-text-secondary);
 }
-.media-placeholder {
-  margin: 0;
+.text.caption {
+  margin: 6px 0 0 0;
   font-size: 13px;
   color: var(--color-text-secondary);
-  font-style: italic;
 }
 
 .meta {
