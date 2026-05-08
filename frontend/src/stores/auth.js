@@ -88,6 +88,12 @@ export const useAuthStore = defineStore('auth', {
       getTokenStorage().clear()
       this.user = null
       safeSaveUser(null)
+    },
+    // D1-W11：profile 保存后同步 user 局部字段，让 displayName/头像跨页面一致
+    patchUser(patch) {
+      if (!patch || typeof patch !== 'object') return
+      this.user = { ...(this.user || {}), ...patch }
+      safeSaveUser(this.user)
     }
   }
 })
