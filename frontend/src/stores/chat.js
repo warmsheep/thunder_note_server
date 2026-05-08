@@ -91,7 +91,9 @@ export const useChatStore = defineStore('chat', {
     },
 
     async send({ content, currentUserId, media = null }) {
-      const trimmed = (content || '').trim()
+      // 防御：上游可能传入非字符串（曾经的回归是 ChatView 把 {text,file} 整体当成 content 传过来），
+      // 用 String(...) 兜底转成字符串再 trim，避免 "trim is not a function"。
+      const trimmed = String(content == null ? '' : content).trim()
       const hasMedia = Boolean(media && media.mediaType)
       if (!trimmed && !hasMedia) {
         throw new Error('消息内容不能为空')

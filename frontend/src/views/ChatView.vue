@@ -13,6 +13,8 @@ import EmptyState from '../components/EmptyState.vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { uploadFile } from '../api/files'
+import { inferMediaType } from '../utils/fileHelpers'
 
 // D1-W6 单条会话页（独立顶级路由 /chat/:flashNoteId）
 // - 进入时根据 :flashNoteId 拉首页（page=1, limit=30）
@@ -172,10 +174,55 @@ async function handleScroll() {
   }
 }
 
-async function handleSend(content) {
+// MessageComposer @submit 的 payload 是 { text, file }
+//   - text：字符串文本（可能为空）
+//   - file：浏览器 File 对象（可能为 null）
+// 这里需要：先把 file 通过 /api/files/upload 拿到 objectName，再把 media 信息传给 chatStore.send。
+// 历史 bug：之前直接 `handleSend(content)` 把整个 payload 对象当作字符串塞进 store，
+// 触发 `(content || '').trim is not a function`。
+async function handleSend(payload) {
+  const text = (payload && typeof payload.text === 'string') ? payload.text : ''
+  const file = payload && payload.file ? payload.file : null
+
+  let media = null
+  if (file) {
+    uploading.value = true
+    uploadProgress.value = 0
+    try {
+      const result = await uploadFile(file, {
+        onUploadProgress: (e) => {
+          if (e && e.total) {
+            uploadProgress.value = e.loaded / e.total
+          }
+        }
+      })
+      const objectName = result?.objectName
+      if (!objectName) {
+        throw new Error('上传失败：缺少 objectName')
+      }
+      media = {
+        mediaType: inferMediaType(file),
+        mediaUrl: objectName,
+        fileName: result?.originalFilename || file.name,
+        fileSize: file.size != null ? Number(file.size) : null
+      }
+    } catch (e) {
+      uploading.value = false
+      uploadProgress.value = 0
+      showError(e?.serverMessage || e?.message || '附件上传失败')
+      return
+    }
+    uploading.value = false
+    uploadProgress.value = 0
+  }
+
   try {
-    await chatStore.send({ content, currentUserId: currentUserId.value })
-    composerRef.value?.clear()
+    await chatStore.send({
+      content: text,
+      currentUserId: currentUserId.value,
+      media
+    })
+    composerRef.value?.reset()
     await nextTick()
     scrollToBottom()
   } catch (e) {

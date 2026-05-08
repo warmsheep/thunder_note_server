@@ -221,6 +221,30 @@ describe('chat store', () => {
     expect(store.messages).toHaveLength(1) // 本地保留
   })
 
+  it('send coerces non-string content (e.g. {text,file} object) without throwing trim is not a function', async () => {
+    // 回归保护：曾经 ChatView 把 MessageComposer 的 {text, file} payload 整个当作 content 传进来，
+    // 导致 (content || '').trim() 报 "trim is not a function"。这里验证 store 已加 String() 兜底。
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    messagesApi.sendMessage.mockResolvedValueOnce({ id: 999, flashNoteId: 7, content: '' })
+    const store = useChatStore()
+    await store.openConversation(7)
+    // 用对象当 content + 提供 media，应不抛 trim 错误，且能成功发送
+    await expect(store.send({
+      content: { text: 'hi', file: null },
+      currentUserId: 1,
+      media: { mediaType: 'file', mediaUrl: 'u/1.bin', fileName: 'a.bin', fileSize: 1 }
+    })).resolves.toBeDefined()
+    expect(messagesApi.sendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('send rejects empty content with no media (still validates)', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const store = useChatStore()
+    await store.openConversation(7)
+    await expect(store.send({ content: '   ', currentUserId: 1 })).rejects.toThrow(/不能为空/)
+    await expect(store.send({ content: null, currentUserId: 1 })).rejects.toThrow(/不能为空/)
+  })
+
   it('mergeSelected refuses when no selection', async () => {
     messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
     const store = useChatStore()
