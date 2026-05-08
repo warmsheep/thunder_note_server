@@ -64,6 +64,25 @@ const deleteDialog = ref({ open: false, mode: 'single', target: null, busy: fals
 // D1-W16-01 收集箱清空确认
 const clearInboxDialog = ref({ open: false, busy: false })
 
+// D1-W17-01 合并为卡片对话框
+const mergeDialog = ref({ open: false, busy: false, title: '' })
+
+// D1-W17-02 卡片详情对话框（只读，后端无 update 接口）
+const cardDetailDialog = ref({ open: false, message: null })
+
+// D1-W17-03 转发对话框
+const forwardDialog = ref({ open: false, busy: false, targetFlashNoteId: null })
+
+const forwardableNotes = computed(() => {
+  // 排除当前会话；优先列出非 inbox + 非 hidden + 非 deleted 的闪记
+  return (flashNotesStore.list || []).filter(
+    (n) => n
+      && !n.deleted
+      && !n.hidden
+      && Number(n.id) !== flashNoteId.value
+  )
+})
+
 const isInbox = computed(() => isInboxFlashNoteId(flashNoteId.value))
 
 function askClearInbox() {
@@ -237,6 +256,91 @@ function toggleSelectMode() {
     chatStore.enterSelectMode()
   }
 }
+
+// D1-W17-01 合并为卡片
+function askMerge() {
+  if (chatStore.selectedIds.size === 0) {
+    showError('请先选择消息')
+    return
+  }
+  if (chatStore.selectedIds.size > 50) {
+    showError('单次最多合并 50 条')
+    return
+  }
+  mergeDialog.value = { open: true, busy: false, title: '' }
+}
+function cancelMerge() {
+  if (mergeDialog.value.busy) return
+  mergeDialog.value = { open: false, busy: false, title: '' }
+}
+async function confirmMerge() {
+  const title = mergeDialog.value.title.trim()
+  if (!title) {
+    showError('请输入卡片标题')
+    return
+  }
+  mergeDialog.value.busy = true
+  try {
+    await chatStore.mergeSelected({ title })
+    mergeDialog.value = { open: false, busy: false, title: '' }
+    showSuccess('已合并为卡片')
+    await nextTick()
+    scrollToBottom()
+  } catch (e) {
+    mergeDialog.value.busy = false
+    showError(e?.serverMessage || e?.message || '合并失败')
+  }
+}
+
+// D1-W17-02 卡片详情
+function openCardDetail(message) {
+  if (!message) return
+  cardDetailDialog.value = { open: true, message }
+}
+function closeCardDetail() {
+  cardDetailDialog.value = { open: false, message: null }
+}
+
+// D1-W17-03 转发
+function askForward() {
+  if (chatStore.selectedIds.size === 0) {
+    showError('请先选择消息')
+    return
+  }
+  if (!flashNotesStore.loaded) {
+    flashNotesStore.fetchList({ silent: true }).catch(() => {})
+  }
+  forwardDialog.value = { open: true, busy: false, targetFlashNoteId: null }
+}
+function cancelForward() {
+  if (forwardDialog.value.busy) return
+  forwardDialog.value = { open: false, busy: false, targetFlashNoteId: null }
+}
+async function confirmForward() {
+  const targetId = forwardDialog.value.targetFlashNoteId
+  if (targetId == null) {
+    showError('请选择目标闪记')
+    return
+  }
+  forwardDialog.value.busy = true
+  try {
+    const { successCount, failures } = await chatStore.forwardSelected({
+      targetFlashNoteId: targetId,
+      currentUserId: currentUserId.value
+    })
+    forwardDialog.value = { open: false, busy: false, targetFlashNoteId: null }
+    if (failures.length === 0) {
+      showSuccess(`已转发 ${successCount} 条`)
+    } else if (successCount === 0) {
+      showError(`转发失败：${failures[0].error}`)
+    } else {
+      showError(`部分转发失败（成功 ${successCount} / 失败 ${failures.length}）`)
+    }
+  } catch (e) {
+    forwardDialog.value.busy = false
+    showError(e?.serverMessage || e?.message || '转发失败')
+  }
+}
 </script>
 
 <template>
@@ -251,13 +355,36 @@ function toggleSelectMode() {
         <button type="button" class="header-btn" @click="toggleSelectMode">
           {{ chatStore.selectMode ? '取消多选' : '多选' }}
         </button>
+        <template v-if="chatStore.selectMode">
+          <button
+            type="button"
+            class="header-btn"
+            :disabled="chatStore.selectedIds.size === 0"
+            @click="askMerge"
+            title="合并所选消息为卡片"
+          >合并</button>
+          <button
+            type="button"
+            class="header-btn"
+            :disabled="chatStore.selectedIds.size === 0"
+            @click="askForward"
+            title="转发所选消息到其他闪记"
+          >转发</button>
+          <button
+            type="button"
+            class="header-btn danger"
+            :disabled="chatStore.selectedIds.size === 0"
+            @click="askDeleteBatch"
+          >删除（{{ chatStore.selectedIds.size }}）</button>
+        </template>
         <button
-          v-if="chatStore.selectMode"
+          v-if="isInbox && !chatStore.selectMode"
           type="button"
           class="header-btn danger"
-          :disabled="chatStore.selectedIds.size === 0"
-          @click="askDeleteBatch"
-        >删除（{{ chatStore.selectedIds.size }}）</button>
+          :disabled="chatStore.messages.length === 0"
+          @click="askClearInbox"
+          title="清空收集箱内全部消息"
+        >清空</button>
       </div>
     </header>
 
@@ -292,6 +419,7 @@ function toggleSelectMode() {
           @delete="askDeleteSingle"
           @retry="handleRetry"
           @toggle-favorite="handleToggleFavorite"
+          @open-card="openCardDetail"
         />
       </template>
     </main>
@@ -326,6 +454,104 @@ function toggleSelectMode() {
       @confirm="confirmClearInbox"
       @cancel="cancelClearInbox"
     />
+
+    <!-- D1-W17-01 合并为卡片：标题输入弹窗 -->
+    <div v-if="mergeDialog.open" class="modal-overlay" @click.self="cancelMerge">
+      <div class="modal" role="dialog" aria-label="合并为卡片">
+        <header class="modal-header">
+          <h2 class="modal-title">合并为卡片</h2>
+          <button type="button" class="modal-close" @click="cancelMerge">×</button>
+        </header>
+        <div class="modal-body">
+          <p class="modal-desc">
+            将所选 {{ chatStore.selectedIds.size }} 条消息合并为一张卡片消息（原消息不会被删除）。
+          </p>
+          <input
+            v-model="mergeDialog.title"
+            type="text"
+            class="modal-input"
+            placeholder="请输入卡片标题"
+            maxlength="64"
+            :disabled="mergeDialog.busy"
+            @keydown.enter.prevent="confirmMerge"
+          />
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="btn-secondary" :disabled="mergeDialog.busy" @click="cancelMerge">取消</button>
+          <button
+            type="button"
+            class="btn-primary"
+            :disabled="mergeDialog.busy || !mergeDialog.title.trim()"
+            @click="confirmMerge"
+          >{{ mergeDialog.busy ? '合并中...' : '合并' }}</button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- D1-W17-02 卡片详情：只读 -->
+    <div v-if="cardDetailDialog.open" class="modal-overlay" @click.self="closeCardDetail">
+      <div class="modal modal-large" role="dialog" aria-label="卡片详情">
+        <header class="modal-header">
+          <h2 class="modal-title">{{ cardDetailDialog.message?.payload?.title || '卡片消息' }}</h2>
+          <button type="button" class="modal-close" @click="closeCardDetail">×</button>
+        </header>
+        <div class="modal-body card-detail">
+          <p v-if="cardDetailDialog.message?.payload?.summary" class="card-detail-summary">
+            {{ cardDetailDialog.message.payload.summary }}
+          </p>
+          <ul class="card-items">
+            <li
+              v-for="(item, i) in (cardDetailDialog.message?.payload?.items || [])"
+              :key="i"
+              class="card-item"
+            >
+              <span class="card-item-index">{{ i + 1 }}</span>
+              <div class="card-item-body">
+                <p class="card-item-meta">{{ item.type || 'TEXT' }} · {{ item.role || '-' }}</p>
+                <p v-if="item.content" class="card-item-content">{{ item.content }}</p>
+                <p v-if="item.fileName" class="card-item-file">📎 {{ item.fileName }}</p>
+              </div>
+            </li>
+          </ul>
+          <p class="card-detail-hint">提示：当前后端不支持卡片编辑；如需修改，请重新合并新卡片。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- D1-W17-03 转发：选择目标闪记 -->
+    <div v-if="forwardDialog.open" class="modal-overlay" @click.self="cancelForward">
+      <div class="modal" role="dialog" aria-label="转发到">
+        <header class="modal-header">
+          <h2 class="modal-title">转发到</h2>
+          <button type="button" class="modal-close" @click="cancelForward">×</button>
+        </header>
+        <div class="modal-body">
+          <p class="modal-desc">将所选 {{ chatStore.selectedIds.size }} 条消息转发到其他闪记。</p>
+          <ul v-if="forwardableNotes.length" class="forward-list">
+            <li
+              v-for="n in forwardableNotes"
+              :key="n.id"
+              class="forward-item"
+              :class="{ active: forwardDialog.targetFlashNoteId === n.id }"
+              @click="forwardDialog.targetFlashNoteId = n.id"
+            >
+              <span class="forward-icon">{{ n.icon || '⚡' }}</span>
+              <span class="forward-title">{{ n.title || '未命名闪记' }}</span>
+            </li>
+          </ul>
+          <p v-else class="empty-text">没有可转发的目标闪记</p>
+        </div>
+        <footer class="modal-footer">
+          <button type="button" class="btn-secondary" :disabled="forwardDialog.busy" @click="cancelForward">取消</button>
+          <button
+            type="button"
+            class="btn-primary"
+            :disabled="forwardDialog.busy || forwardDialog.targetFlashNoteId == null"
+            @click="confirmForward"
+          >{{ forwardDialog.busy ? '转发中...' : '转发' }}</button>
+        </footer>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -336,6 +562,210 @@ function toggleSelectMode() {
   height: 100vh;
   background: var(--color-bg);
 }
+
+/* D1-W17 modal 样式（合并/卡片详情/转发共用） */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  width: min(420px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.modal-large { width: min(520px, 100%); }
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.modal-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-divider);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--color-divider);
+}
+.modal-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.modal-input {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  outline: none;
+}
+.modal-input:focus { border-color: var(--color-primary); }
+
+.btn-primary {
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-secondary {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-secondary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.card-detail-summary {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.card-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.card-item-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.card-item-body { min-width: 0; }
+.card-item-meta {
+  margin: 0 0 4px 0;
+  font-size: 11px;
+  color: var(--color-text-hint);
+  text-transform: uppercase;
+}
+.card-item-content {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.card-item-file {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.card-detail-hint {
+  margin: 8px 0 0 0;
+  font-size: 12px;
+  color: var(--color-text-hint);
+  text-align: center;
+}
+
+.forward-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.forward-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.forward-item:hover { border-color: var(--color-primary); }
+.forward-item.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.forward-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  border-radius: 50%;
+  font-size: 14px;
+}
+.forward-title {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+.empty-text {
+  margin: 16px 0;
+  text-align: center;
+  color: var(--color-text-hint);
+  font-size: 13px;
+}
+
 .chat-header {
   display: flex;
   align-items: center;

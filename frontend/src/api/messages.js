@@ -76,3 +76,30 @@ export function clearInbox() {
 export function countMessages() {
   return apiClient.get('/api/messages/count')
 }
+
+// D1-W17-01 合并多条消息为卡片消息
+// 后端约束：
+//   - title 必填（非空白）
+//   - messageIds 1-50 条，且必须属于同一会话
+//   - flashNoteId / receiverId 二选一必填
+//   - 原消息不删除，新生成 mediaType=COMPOSITE 的卡片消息
+export function mergeMessages({ title, messageIds, flashNoteId = null, receiverId = null } = {}) {
+  if (!title || !String(title).trim()) {
+    return Promise.reject(new Error('title is required'))
+  }
+  if (!Array.isArray(messageIds) || messageIds.length === 0) {
+    return Promise.reject(new Error('messageIds must be a non-empty array'))
+  }
+  if (messageIds.length > 50) {
+    return Promise.reject(new Error('messageIds size must be <= 50'))
+  }
+  if (flashNoteId == null && receiverId == null) {
+    return Promise.reject(new Error('flashNoteId or receiverId is required'))
+  }
+  return apiClient.post('/api/messages/merge', {
+    title: String(title).trim(),
+    messageIds,
+    flashNoteId,
+    receiverId
+  })
+}

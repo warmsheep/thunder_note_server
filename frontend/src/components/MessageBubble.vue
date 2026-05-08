@@ -1,9 +1,12 @@
 <script setup>
 import { computed } from 'vue'
+import { renderMarkdown } from '../utils/markdownRenderer'
 
 // D1-W6 单条消息气泡
 // - 自己发送的右对齐绿色气泡，对方/系统左对齐灰色气泡
-// - 文本：渲染 content；卡片：用 payload 展示标题+摘要（W6-09 只读）；媒体：占位（W8 实现）
+// - 文本：D1-W17-04 用 markdown 渲染（marked + DOMPurify）
+// - 卡片：D1-W17-02 点击 → 打开详情查看 items 列表
+// - 媒体：W8 实现
 // - 选择模式：左侧多选 checkbox；非选择模式：hover 显示删除入口
 
 const props = defineProps({
@@ -14,14 +17,17 @@ const props = defineProps({
   favorited: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['toggle-select', 'delete', 'retry', 'toggle-favorite'])
+const emit = defineEmits(['toggle-select', 'delete', 'retry', 'toggle-favorite', 'open-card'])
 
 const m = computed(() => props.message || {})
 
 const status = computed(() => m.value.__status || 'sent')
 
 const isCard = computed(() => Boolean(m.value.payload && m.value.payload.cardType))
-const isMedia = computed(() => Boolean(m.value.mediaType))
+const isMedia = computed(() => Boolean(m.value.mediaType) && !isCard.value)
+
+// D1-W17-04 仅纯文本气泡渲染 markdown；媒体气泡的 caption 仍保留纯文本（避免 caption 内嵌过多结构）
+const renderedHtml = computed(() => renderMarkdown(m.value.content))
 
 function timeText(iso) {
   if (!iso) return ''
@@ -42,16 +48,25 @@ function timeText(iso) {
     <div class="bubble-wrap">
       <div class="bubble" :class="[mine ? 'bubble-mine' : 'bubble-other', `status-${status}`]">
         <template v-if="isCard">
-          <p class="card-type">📇 {{ m.payload.cardType }}</p>
-          <p v-if="m.payload.title" class="card-title">{{ m.payload.title }}</p>
-          <p v-if="m.payload.summary" class="card-summary">{{ m.payload.summary }}</p>
+          <button
+            type="button"
+            class="card-clickable"
+            @click="emit('open-card', m)"
+            :title="'查看卡片详情'"
+          >
+            <p class="card-type">📇 卡片</p>
+            <p v-if="m.payload.title" class="card-title">{{ m.payload.title }}</p>
+            <p v-if="m.payload.summary" class="card-summary">{{ m.payload.summary }}</p>
+            <p class="card-hint">点击查看详情</p>
+          </button>
         </template>
         <template v-else-if="isMedia">
           <MediaPreview :message="m" />
           <p v-if="m.content" class="text caption">{{ m.content }}</p>
         </template>
         <template v-else>
-          <p class="text">{{ m.content }}</p>
+          <!-- D1-W17-04 markdown 渲染（已经过 DOMPurify，安全 v-html） -->
+          <div class="text markdown-body" v-html="renderedHtml"></div>
         </template>
       </div>
 
@@ -164,6 +179,93 @@ function timeText(iso) {
 }
 .status-tag.pending {
   color: var(--color-text-hint);
+}
+
+/* D1-W17-04 markdown 渲染样式（仅消息气泡内） */
+.markdown-body {
+  white-space: normal;
+}
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 6px 0 4px 0;
+  font-weight: 600;
+  font-size: inherit;
+  line-height: 1.4;
+}
+.markdown-body :deep(h1) { font-size: 1.15em; }
+.markdown-body :deep(h2) { font-size: 1.1em; }
+.markdown-body :deep(p) {
+  margin: 0;
+  line-height: 1.5;
+}
+.markdown-body :deep(p) + :deep(p) {
+  margin-top: 6px;
+}
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+.markdown-body :deep(li) {
+  margin: 2px 0;
+}
+.markdown-body :deep(code) {
+  background: rgba(0, 0, 0, 0.07);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+.markdown-body :deep(pre) {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.markdown-body :deep(pre code) {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid currentColor;
+  padding-left: 10px;
+  margin: 4px 0;
+  opacity: 0.85;
+}
+.markdown-body :deep(a) {
+  color: inherit;
+  text-decoration: underline;
+}
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 8px 0;
+}
+
+/* D1-W17-02 卡片可点击样式 */
+.card-clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.card-clickable:hover .card-title {
+  text-decoration: underline;
+}
+.card-hint {
+  margin: 6px 0 0 0;
+  font-size: 11px;
+  opacity: 0.7;
 }
 .status-tag.failed {
   color: var(--color-danger);

@@ -6,7 +6,8 @@ vi.mock('../api/messages', () => ({
   sendMessage: vi.fn(),
   deleteMessage: vi.fn(),
   deleteMessagesBatch: vi.fn(),
-  clearInbox: vi.fn()
+  clearInbox: vi.fn(),
+  mergeMessages: vi.fn()
 }))
 
 import * as messagesApi from '../api/messages'
@@ -218,5 +219,105 @@ describe('chat store', () => {
     await expect(store.clearInbox()).rejects.toThrow('boom')
     expect(store.error).toBe('清空失败')
     expect(store.messages).toHaveLength(1) // 本地保留
+  })
+
+  it('mergeSelected refuses when no selection', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const store = useChatStore()
+    await store.openConversation(7)
+    await expect(store.mergeSelected({ title: 'x' })).rejects.toThrow(/未选择/)
+    expect(messagesApi.mergeMessages).not.toHaveBeenCalled()
+  })
+
+  it('mergeSelected appends new card to messages and exits select mode', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+      msg(1, 'a', '2026-01-01T00:00:00'),
+      msg(2, 'b', '2026-01-02T00:00:00')
+    ], 1, 2))
+    const card = { id: 1001, mediaType: 'COMPOSITE', flashNoteId: 7, content: 'merged', payload: { cardType: 'MESSAGE_COLLECTION', title: 'merged' } }
+    messagesApi.mergeMessages.mockResolvedValueOnce(card)
+    const store = useChatStore()
+    await store.openConversation(7)
+    store.enterSelectMode()
+    store.toggleSelect(1)
+    store.toggleSelect(2)
+    expect(store.selectedIds.size).toBe(2)
+
+    const result = await store.mergeSelected({ title: 'merged' })
+    expect(messagesApi.mergeMessages).toHaveBeenCalledWith({
+      title: 'merged',
+      messageIds: [1, 2],
+      flashNoteId: 7
+    })
+    expect(result).toEqual(card)
+    expect(store.messages.map((m) => m.id)).toEqual([1, 2, 1001])
+    expect(store.selectMode).toBe(false)
+    expect(store.selectedIds.size).toBe(0)
+  })
+
+  it('mergeSelected surfaces server error and keeps state', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const err = new Error('bad')
+    err.serverMessage = '消息不属于同一会话'
+    messagesApi.mergeMessages.mockRejectedValueOnce(err)
+    const store = useChatStore()
+    await store.openConversation(7)
+    store.enterSelectMode()
+    store.toggleSelect(1)
+    await expect(store.mergeSelected({ title: 't' })).rejects.toThrow('bad')
+    expect(store.error).toBe('消息不属于同一会话')
+    expect(store.selectMode).toBe(true) // 不退出多选，便于用户调整后重试
+  })
+
+  it('forwardSelected loops sendMessage and reports successCount', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+      msg(1, 'a', '2026-01-01T00:00:00'),
+      msg(2, 'b', '2026-01-02T00:00:00')
+    ]))
+    messagesApi.sendMessage.mockResolvedValue({ id: 999 })
+    const store = useChatStore()
+    await store.openConversation(7)
+    store.enterSelectMode()
+    store.toggleSelect(1)
+    store.toggleSelect(2)
+    const r = await store.forwardSelected({ targetFlashNoteId: 88 })
+    expect(messagesApi.sendMessage).toHaveBeenCalledTimes(2)
+    expect(messagesApi.sendMessage.mock.calls[0][0].flashNoteId).toBe(88)
+    expect(r).toEqual({ successCount: 2, failures: [] })
+    expect(store.selectMode).toBe(false)
+  })
+
+  it('forwardSelected does not abort on per-message failure', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+      msg(1, 'a', '2026-01-01T00:00:00'),
+      msg(2, 'b', '2026-01-02T00:00:00'),
+      msg(3, 'c', '2026-01-03T00:00:00')
+    ]))
+    const err = new Error('fail')
+    err.serverMessage = '禁止访问'
+    messagesApi.sendMessage
+      .mockResolvedValueOnce({ id: 1 })
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ id: 3 })
+    const store = useChatStore()
+    await store.openConversation(7)
+    store.enterSelectMode()
+    store.toggleSelect(1)
+    store.toggleSelect(2)
+    store.toggleSelect(3)
+    const r = await store.forwardSelected({ targetFlashNoteId: 88 })
+    expect(r.successCount).toBe(2)
+    expect(r.failures).toHaveLength(1)
+    expect(r.failures[0]).toMatchObject({ originalId: 2, error: '禁止访问' })
+  })
+
+  it('forwardSelected refuses when targetFlashNoteId is missing', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const store = useChatStore()
+    await store.openConversation(7)
+    store.enterSelectMode()
+    store.toggleSelect(1)
+    await expect(store.forwardSelected({ targetFlashNoteId: null })).rejects.toThrow(/目标闪记/)
+    expect(messagesApi.sendMessage).not.toHaveBeenCalled()
   })
 })

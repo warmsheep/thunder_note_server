@@ -4,7 +4,8 @@ import {
   sendMessage as sendMessageApi,
   deleteMessage as deleteMessageApi,
   deleteMessagesBatch as deleteMessagesBatchApi,
-  clearInbox as clearInboxApi
+  clearInbox as clearInboxApi,
+  mergeMessages as mergeMessagesApi
 } from '../api/messages'
 import {
   buildInitialMessages,
@@ -208,6 +209,78 @@ export const useChatStore = defineStore('chat', {
         this.error = e?.serverMessage || e?.message || '批量删除失败'
         throw e
       }
+    },
+
+    // D1-W17-01 合并多选消息为卡片
+    // 调用方传入 title；返回新生成的卡片消息（已追加到 messages 末尾）
+    // 注意：后端 merge 只在末尾**新增一条** COMPOSITE 消息，原消息不删除
+    async mergeSelected({ title }) {
+      const ids = Array.from(this.selectedIds).filter((v) => v != null)
+      if (ids.length === 0) {
+        throw new Error('未选择任何消息')
+      }
+      if (this.flashNoteId == null) {
+        throw new Error('当前会话未就绪')
+      }
+      try {
+        const cardMessage = await mergeMessagesApi({
+          title,
+          messageIds: ids,
+          flashNoteId: this.flashNoteId
+        })
+        if (cardMessage && cardMessage.id != null) {
+          this.messages = [...this.messages, cardMessage]
+          this.total = this.total + 1
+        }
+        this.selectedIds = new Set()
+        this.selectMode = false
+        return cardMessage
+      } catch (e) {
+        this.error = e?.serverMessage || e?.message || '合并失败'
+        throw e
+      }
+    },
+
+    // D1-W17-03 转发多选消息到目标闪记
+    // 后端无原生转发接口，按原顺序循环 sendMessage 到目标 flashNoteId
+    // - 仅转发文本/媒体的核心字段；卡片消息按其 content 转发文本（不复制 payload）
+    // - 失败一条不阻塞其他，返回 { successCount, failures: [{ originalId, error }] }
+    async forwardSelected({ targetFlashNoteId, currentUserId } = {}) {
+      const ids = Array.from(this.selectedIds).filter((v) => v != null)
+      if (ids.length === 0) throw new Error('未选择任何消息')
+      if (targetFlashNoteId == null) throw new Error('未选择目标闪记')
+
+      // 保留原顺序：messages 按 createdAt 升序，filter 后顺序与原数组一致
+      const toForward = this.messages.filter((m) => m && ids.includes(m.id))
+      const failures = []
+      let successCount = 0
+
+      for (const msg of toForward) {
+        try {
+          await sendMessageApi({
+            flashNoteId: targetFlashNoteId,
+            content: msg.content == null ? '' : String(msg.content),
+            // 媒体字段对原所有者仍可访问；后端会按当前用户做权限校验
+            mediaType: msg.mediaType || null,
+            mediaUrl: msg.mediaUrl || null,
+            fileName: msg.fileName || null,
+            fileSize: msg.fileSize || null,
+            mediaDuration: msg.mediaDuration || null,
+            thumbnailUrl: msg.thumbnailUrl || null
+          })
+          successCount += 1
+        } catch (e) {
+          failures.push({
+            originalId: msg.id,
+            error: e?.serverMessage || e?.message || '转发失败'
+          })
+        }
+      }
+
+      this.selectedIds = new Set()
+      this.selectMode = false
+      void currentUserId
+      return { successCount, failures }
     },
 
     // D1-W16-01 清空收集箱

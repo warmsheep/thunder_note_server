@@ -11,7 +11,8 @@ import {
   deleteMessage,
   deleteMessagesBatch,
   clearInbox,
-  countMessages
+  countMessages,
+  mergeMessages
 } from './messages'
 
 function apiResponse(data) {
@@ -151,5 +152,37 @@ describe('messages api wrappers', () => {
     const value = await countMessages()
     expect(captured).toEqual({ url: '/api/messages/count', method: 'get' })
     expect(value).toBe(123)
+  })
+
+  it('mergeMessages posts /api/messages/merge with title trimmed', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = { url: config.url, method: config.method, body: JSON.parse(config.data) }
+      return { status: 200, data: apiResponse({ id: 1001, mediaType: 'COMPOSITE' }), headers: {}, config }
+    })
+    const card = await mergeMessages({ title: '  会议纪要  ', messageIds: [1, 2, 3], flashNoteId: 9 })
+    expect(captured).toEqual({
+      url: '/api/messages/merge',
+      method: 'post',
+      body: { title: '会议纪要', messageIds: [1, 2, 3], flashNoteId: 9, receiverId: null }
+    })
+    expect(card.id).toBe(1001)
+  })
+
+  it('mergeMessages rejects when title is blank', async () => {
+    await expect(mergeMessages({ title: '   ', messageIds: [1], flashNoteId: 9 })).rejects.toThrow(/title/)
+  })
+
+  it('mergeMessages rejects when messageIds is empty', async () => {
+    await expect(mergeMessages({ title: 'x', messageIds: [], flashNoteId: 9 })).rejects.toThrow(/messageIds/)
+  })
+
+  it('mergeMessages rejects when messageIds size > 50', async () => {
+    const ids = Array.from({ length: 51 }, (_, i) => i + 1)
+    await expect(mergeMessages({ title: 'x', messageIds: ids, flashNoteId: 9 })).rejects.toThrow(/<= 50/)
+  })
+
+  it('mergeMessages rejects when both flashNoteId and receiverId are missing', async () => {
+    await expect(mergeMessages({ title: 'x', messageIds: [1] })).rejects.toThrow(/flashNoteId/)
   })
 })
