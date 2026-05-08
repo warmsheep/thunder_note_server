@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useFlashNotesStore } from '../stores/flashNotes'
 import { useToast } from '../composables/useToast'
 import LoadingState from '../components/LoadingState.vue'
@@ -17,6 +18,12 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 
 const store = useFlashNotesStore()
 const { showSuccess, showError } = useToast()
+const router = useRouter()
+
+function openChat(note) {
+  if (!note || note.id == null) return
+  router.push({ name: 'chat', params: { flashNoteId: String(note.id) } })
+}
 
 const editDialog = ref({ open: false, mode: 'create', initial: {}, target: null })
 const deleteDialog = ref({ open: false, target: null, busy: false })
@@ -152,7 +159,7 @@ function formatTime(iso) {
       <template v-else>
         <section v-if="store.inboxNote" class="group">
           <header class="group-header">收集箱</header>
-          <article class="note-item inbox" @click.self>
+          <article class="note-item inbox clickable" @click="openChat({ id: -1 })">
             <div class="note-icon" aria-hidden="true">{{ store.inboxNote.icon || '📥' }}</div>
             <div class="note-meta">
               <p class="note-title">{{ store.inboxNote.title || '收集箱' }}</p>
@@ -167,7 +174,8 @@ function formatTime(iso) {
           <article
             v-for="note in store.pinnedList"
             :key="note.id"
-            class="note-item"
+            class="note-item clickable"
+            @click="openChat(note)"
           >
             <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
             <div class="note-meta">
@@ -179,10 +187,10 @@ function formatTime(iso) {
             </div>
             <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
             <div class="note-actions">
-              <button type="button" class="action" @click="openEdit(note)">编辑</button>
-              <button type="button" class="action" @click="togglePin(note)">取消置顶</button>
-              <button type="button" class="action" @click="toggleHide(note)">隐藏</button>
-              <button type="button" class="action danger" @click="askDelete(note)">删除</button>
+              <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
+              <button type="button" class="action" @click.stop="togglePin(note)">取消置顶</button>
+              <button type="button" class="action" @click.stop="toggleHide(note)">隐藏</button>
+              <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
             </div>
           </article>
         </section>
@@ -192,7 +200,8 @@ function formatTime(iso) {
           <article
             v-for="note in store.normalList"
             :key="note.id"
-            class="note-item"
+            class="note-item clickable"
+            @click="openChat(note)"
           >
             <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
             <div class="note-meta">
@@ -201,10 +210,10 @@ function formatTime(iso) {
             </div>
             <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
             <div class="note-actions">
-              <button type="button" class="action" @click="openEdit(note)">编辑</button>
-              <button type="button" class="action" @click="togglePin(note)">置顶</button>
-              <button type="button" class="action" @click="toggleHide(note)">隐藏</button>
-              <button type="button" class="action danger" @click="askDelete(note)">删除</button>
+              <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
+              <button type="button" class="action" @click.stop="togglePin(note)">置顶</button>
+              <button type="button" class="action" @click.stop="toggleHide(note)">隐藏</button>
+              <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
             </div>
           </article>
         </section>
@@ -218,7 +227,8 @@ function formatTime(iso) {
             <article
               v-for="note in store.hiddenList"
               :key="note.id"
-              class="note-item dimmed"
+              class="note-item dimmed clickable"
+              @click="openChat(note)"
             >
               <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
               <div class="note-meta">
@@ -227,9 +237,9 @@ function formatTime(iso) {
               </div>
               <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
               <div class="note-actions">
-                <button type="button" class="action" @click="openEdit(note)">编辑</button>
-                <button type="button" class="action" @click="toggleHide(note)">取消隐藏</button>
-                <button type="button" class="action danger" @click="askDelete(note)">删除</button>
+                <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
+                <button type="button" class="action" @click.stop="toggleHide(note)">取消隐藏</button>
+                <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
               </div>
             </article>
           </template>
@@ -339,6 +349,17 @@ function formatTime(iso) {
 }
 .note-item.inbox {
   background: var(--color-primary-light);
+}
+.note-item.clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.note-item.clickable:hover {
+  background: var(--color-bg);
+}
+.note-item.inbox.clickable:hover {
+  background: var(--color-primary-light);
+  filter: brightness(0.97);
 }
 .note-icon {
   grid-area: icon;

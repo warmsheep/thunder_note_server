@@ -63,6 +63,12 @@ const router = createRouter({
       ]
     },
     {
+      path: '/chat/:flashNoteId(-?\\d+)',
+      name: 'chat',
+      component: () => import('../views/ChatView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/'
     }
