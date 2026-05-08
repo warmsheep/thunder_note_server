@@ -265,6 +265,12 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
               <span class="chevron">›</span>
             </span>
           </li>
+          <li class="link-row" @click="$router.push('/change-password')">
+            <span class="kv-label">修改密码</span>
+            <span class="kv-value">
+              <span class="chevron">›</span>
+            </span>
+          </li>
         </ul>
       </section>
 

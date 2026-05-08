@@ -31,6 +31,14 @@ export function logout() {
   return apiClient.post('/api/auth/logout')
 }
 
-export function changePassword({ oldPassword, newPassword }) {
-  return apiClient.put('/api/auth/password', { oldPassword, newPassword })
+// D1-W15 修改密码：后端 DTO 字段是 currentPassword（不是 oldPassword）
+// 后端 @Size(min = 6) 校验 newPassword，前端额外做 confirm 一致性校验
+export function changePassword({ currentPassword, newPassword }) {
+  if (!currentPassword) {
+    return Promise.reject(new Error('currentPassword is required'))
+  }
+  if (!newPassword) {
+    return Promise.reject(new Error('newPassword is required'))
+  }
+  return apiClient.put('/api/auth/password', { currentPassword, newPassword })
 }
