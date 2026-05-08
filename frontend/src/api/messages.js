@@ -64,3 +64,15 @@ export function deleteMessagesBatch(ids) {
   }
   return apiClient.post('/api/messages/delete-batch', { ids })
 }
+
+// D1-W16-01 清空收集箱：仅清空 flashNoteId=-1 且 sender=receiver=self 的消息
+// 后端无需任何参数，认证用户由 token 决定
+export function clearInbox() {
+  return apiClient.delete('/api/messages/clear-inbox')
+}
+
+// D1-W16-02 消息总数：当前用户参与的所有消息数（sender 或 receiver 为 self）
+// 不是按会话计数，是全局统计
+export function countMessages() {
+  return apiClient.get('/api/messages/count')
+}

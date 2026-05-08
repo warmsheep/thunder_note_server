@@ -9,7 +9,9 @@ import {
   listMessages,
   sendMessage,
   deleteMessage,
-  deleteMessagesBatch
+  deleteMessagesBatch,
+  clearInbox,
+  countMessages
 } from './messages'
 
 function apiResponse(data) {
@@ -127,5 +129,27 @@ describe('messages api wrappers', () => {
 
   it('deleteMessagesBatch rejects empty array', async () => {
     await expect(deleteMessagesBatch([])).rejects.toThrow(/non-empty/)
+  })
+
+  it('clearInbox sends DELETE /api/messages/clear-inbox without body', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = { url: config.url, method: config.method, data: config.data }
+      return { status: 200, data: apiResponse(null), headers: {}, config }
+    })
+    await clearInbox()
+    expect(captured.url).toBe('/api/messages/clear-inbox')
+    expect(captured.method).toBe('delete')
+  })
+
+  it('countMessages sends GET /api/messages/count and returns numeric data', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = { url: config.url, method: config.method }
+      return { status: 200, data: apiResponse(123), headers: {}, config }
+    })
+    const value = await countMessages()
+    expect(captured).toEqual({ url: '/api/messages/count', method: 'get' })
+    expect(value).toBe(123)
   })
 })

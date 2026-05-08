@@ -61,6 +61,34 @@ const showEmpty = computed(
 // 删除确认
 const deleteDialog = ref({ open: false, mode: 'single', target: null, busy: false })
 
+// D1-W16-01 收集箱清空确认
+const clearInboxDialog = ref({ open: false, busy: false })
+
+const isInbox = computed(() => isInboxFlashNoteId(flashNoteId.value))
+
+function askClearInbox() {
+  clearInboxDialog.value = { open: true, busy: false }
+}
+
+function cancelClearInbox() {
+  if (clearInboxDialog.value.busy) return
+  clearInboxDialog.value = { open: false, busy: false }
+}
+
+async function confirmClearInbox() {
+  clearInboxDialog.value.busy = true
+  try {
+    await chatStore.clearInbox()
+    clearInboxDialog.value = { open: false, busy: false }
+    showSuccess('收集箱已清空')
+    // 同步刷新闪记列表，让收集箱项的 latestMessage 也更新
+    flashNotesStore.fetchList({ silent: true }).catch(() => {})
+  } catch (e) {
+    clearInboxDialog.value.busy = false
+    showError(e?.serverMessage || e?.message || '清空失败')
+  }
+}
+
 async function reload() {
   if (flashNoteId.value == null || Number.isNaN(flashNoteId.value)) {
     router.replace('/notes')
@@ -286,6 +314,17 @@ function toggleSelectMode() {
       danger
       @confirm="confirmDelete"
       @cancel="cancelDelete"
+    />
+
+    <ConfirmDialog
+      :open="clearInboxDialog.open"
+      :busy="clearInboxDialog.busy"
+      title="清空收集箱"
+      message="确认清空收集箱内的全部消息？此操作不可撤销。"
+      confirm-label="清空"
+      danger
+      @confirm="confirmClearInbox"
+      @cancel="cancelClearInbox"
     />
   </div>
 </template>

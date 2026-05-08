@@ -3,14 +3,16 @@ import {
   listMessages,
   sendMessage as sendMessageApi,
   deleteMessage as deleteMessageApi,
-  deleteMessagesBatch as deleteMessagesBatchApi
+  deleteMessagesBatch as deleteMessagesBatchApi,
+  clearInbox as clearInboxApi
 } from '../api/messages'
 import {
   buildInitialMessages,
   mergeOlderRecords,
   replaceOptimisticByClientId,
   createOptimisticMessage,
-  newClientRequestId
+  newClientRequestId,
+  isInboxFlashNoteId
 } from '../utils/messageHelpers'
 
 // D1-W6 当前会话 store。一次只承载一个会话（切换会话时 reset 后重新拉取）。
@@ -204,6 +206,27 @@ export const useChatStore = defineStore('chat', {
         this.selectMode = false
       } catch (e) {
         this.error = e?.serverMessage || e?.message || '批量删除失败'
+        throw e
+      }
+    },
+
+    // D1-W16-01 清空收集箱
+    // 仅在当前会话是收集箱（flashNoteId === -1）时合理；其他会话不允许调用
+    async clearInbox() {
+      if (!isInboxFlashNoteId(this.flashNoteId)) {
+        throw new Error('当前会话不是收集箱')
+      }
+      try {
+        await clearInboxApi()
+        this.messages = []
+        this.total = 0
+        // hasMore 是 getter（page < pages），通过设置 page=pages 让 hasMore 变为 false
+        this.page = 1
+        this.pages = 1
+        this.selectedIds = new Set()
+        this.selectMode = false
+      } catch (e) {
+        this.error = e?.serverMessage || e?.message || '清空失败'
         throw e
       }
     },

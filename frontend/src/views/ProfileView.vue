@@ -6,6 +6,7 @@ import { useProfileStore } from '../stores/profile'
 import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
 import { uploadFile } from '../api/files'
+import { countMessages } from '../api/messages'
 import { buildAvatarUrl } from '../utils/avatarHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -30,6 +31,19 @@ const avatarProgress = ref(0)
 const editing = ref(false)
 const editForm = ref({ nickname: '', bio: '' })
 const editError = ref('')
+
+// D1-W16-02 消息总数（当前用户参与的全部消息数；接口失败保持静默不影响主流程）
+const messageCount = ref(null)
+async function loadMessageCount() {
+  try {
+    const value = await countMessages()
+    const n = Number(value)
+    messageCount.value = Number.isFinite(n) && n >= 0 ? n : null
+  } catch (_e) {
+    // 静默失败，UI 显示 '-'
+    messageCount.value = null
+  }
+}
 
 const NICK_MAX = 32
 const BIO_MAX = 200
@@ -60,6 +74,8 @@ onMounted(async () => {
       // store.error 已设
     }
   }
+  // D1-W16-02 消息总数静默拉取，与 profile 加载并行
+  loadMessageCount()
 })
 
 function startEdit() {
@@ -290,6 +306,10 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
           <li>
             <span class="kv-label">当前用户 ID</span>
             <span class="kv-value mono">{{ user.id ?? '-' }}</span>
+          </li>
+          <li>
+            <span class="kv-label">消息总数</span>
+            <span class="kv-value mono">{{ messageCount == null ? '-' : messageCount }}</span>
           </li>
         </ul>
         <div class="card-footer">

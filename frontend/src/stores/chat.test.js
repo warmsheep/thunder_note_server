@@ -5,7 +5,8 @@ vi.mock('../api/messages', () => ({
   listMessages: vi.fn(),
   sendMessage: vi.fn(),
   deleteMessage: vi.fn(),
-  deleteMessagesBatch: vi.fn()
+  deleteMessagesBatch: vi.fn(),
+  clearInbox: vi.fn()
 }))
 
 import * as messagesApi from '../api/messages'
@@ -177,5 +178,45 @@ describe('chat store', () => {
     expect(store.flashNoteId).toBeNull()
     expect(store.messages).toEqual([])
     expect(store.page).toBe(0)
+  })
+
+  it('clearInbox refuses non-inbox conversations', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const store = useChatStore()
+    await store.openConversation(7) // 普通闪记，flashNoteId !== -1
+    await expect(store.clearInbox()).rejects.toThrow(/收集箱/)
+    expect(messagesApi.clearInbox).not.toHaveBeenCalled()
+  })
+
+  it('clearInbox clears local messages and resets pagination on inbox conversation', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+      msg(1, 'a', '2026-01-01T00:00:00'),
+      msg(2, 'b', '2026-01-02T00:00:00')
+    ], 1, 50, 2))
+    messagesApi.clearInbox.mockResolvedValueOnce(null)
+    const store = useChatStore()
+    await store.openConversation(-1) // 收集箱
+    expect(store.messages).toHaveLength(2)
+    expect(store.hasMore).toBe(true)
+
+    await store.clearInbox()
+    expect(messagesApi.clearInbox).toHaveBeenCalledTimes(1)
+    expect(store.messages).toEqual([])
+    expect(store.total).toBe(0)
+    expect(store.hasMore).toBe(false)
+    expect(store.selectedIds.size).toBe(0)
+    expect(store.selectMode).toBe(false)
+  })
+
+  it('clearInbox surfaces server error and keeps local state', async () => {
+    messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
+    const err = new Error('boom')
+    err.serverMessage = '清空失败'
+    messagesApi.clearInbox.mockRejectedValueOnce(err)
+    const store = useChatStore()
+    await store.openConversation(-1)
+    await expect(store.clearInbox()).rejects.toThrow('boom')
+    expect(store.error).toBe('清空失败')
+    expect(store.messages).toHaveLength(1) // 本地保留
   })
 })
