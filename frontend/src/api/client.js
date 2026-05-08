@@ -1,11 +1,34 @@
 import axios from 'axios'
+import { getTokenStorage } from './tokenStorage'
 
-// D1-W2-01 / D1-W2-02 统一 apiClient
+// D1-W2-01 / D1-W2-02 / D1-W2-04 统一 apiClient
 // - 同源走 /api/...，dev 模式由 vite proxy 转发到后端 8080
-// - 自动解包 ApiResponse 的 data 字段
-// - W2-03 / W2-04 落地后再补 token 注入与 401 / refresh 处理
+// - 自动注入 Bearer access token，除非调用方显式 skipAuth
+// - 自动解包 ApiResponse 的 data 字段，异常时抛出带 code/message 的 Error
+// - 401 时尝试使用 refresh token 自动续期，并 replay 原请求
+// - 续期失败或无 refresh token 时清空本地登录态并通知上层 onUnauthorized
 
 const HTTP_TIMEOUT_MS = 15000
+
+// 注入点：由 main.js 在 Pinia 就绪后 configureApiClient() 绑定
+let refreshFn = null
+let onUnauthorized = null
+let ongoingRefresh = null
+
+export function configureApiClient(options = {}) {
+  if (typeof options.refresh === 'function') {
+    refreshFn = options.refresh
+  }
+  if (typeof options.onUnauthorized === 'function') {
+    onUnauthorized = options.onUnauthorized
+  }
+}
+
+export function __resetApiClientForTests() {
+  refreshFn = null
+  onUnauthorized = null
+  ongoingRefresh = null
+}
 
 const raw = axios.create({
   baseURL: '/',
@@ -15,29 +38,86 @@ const raw = axios.create({
   }
 })
 
-// 占位 token getter；W2-03 接入 Pinia 后替换
-let tokenProvider = () => null
-
-export function setTokenProvider(fn) {
-  if (typeof fn === 'function') {
-    tokenProvider = fn
-  }
-}
-
 raw.interceptors.request.use((config) => {
+  if (config && config.skipAuth) {
+    return config
+  }
   try {
-    const token = tokenProvider()
-    if (token && !config.headers.Authorization) {
+    const token = getTokenStorage().getAccessToken()
+    if (token && config.headers && !config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`
     }
   } catch (_e) {
-    // tokenProvider 出错不阻塞请求；W2-04 完整接入登录态后再补错误处理
+    // 读取 token 失败不阻塞请求，由后端按未认证处理
   }
   return config
 })
 
+raw.interceptors.response.use(
+  (resp) => resp,
+  async (error) => {
+    const status = error && error.response ? error.response.status : null
+    const config = error ? error.config : null
+    const canRetry = config && !config._retriedAfterRefresh && !config.skipAuth
+
+    if (status !== 401 || !canRetry) {
+      return Promise.reject(error)
+    }
+
+    const storage = getTokenStorage()
+    const refreshToken = storage.getRefreshToken()
+
+    if (!refreshToken || !refreshFn) {
+      storage.clear()
+      notifyUnauthorized()
+      return Promise.reject(error)
+    }
+
+    try {
+      if (!ongoingRefresh) {
+        ongoingRefresh = Promise.resolve()
+          .then(() => refreshFn(refreshToken))
+          .finally(() => {
+            // ongoingRefresh 只用作并发去重；reset 发生在下方根据成败分支
+          })
+      }
+      const refreshed = await ongoingRefresh
+      ongoingRefresh = null
+
+      if (!refreshed || !refreshed.accessToken) {
+        throw new Error('Refresh response missing accessToken')
+      }
+      storage.setTokens({
+        accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken || refreshToken
+      })
+
+      config._retriedAfterRefresh = true
+      config.headers = config.headers || {}
+      config.headers.Authorization = `Bearer ${refreshed.accessToken}`
+      return raw(config)
+    } catch (refreshError) {
+      ongoingRefresh = null
+      storage.clear()
+      notifyUnauthorized()
+      return Promise.reject(refreshError)
+    }
+  }
+)
+
+function notifyUnauthorized() {
+  if (!onUnauthorized) {
+    return
+  }
+  try {
+    onUnauthorized()
+  } catch (_e) {
+    // 忽略上层回调异常，避免掩盖原始网络错误
+  }
+}
+
 function unwrap(resp) {
-  const body = resp?.data
+  const body = resp && resp.data
   if (body && typeof body === 'object' && 'code' in body && 'data' in body) {
     if (body.code === 0) {
       return body.data
@@ -52,8 +132,9 @@ function unwrap(resp) {
 
 const apiClient = {
   raw,
-  async get(url, params) {
-    const resp = await raw.get(url, { params })
+  async get(url, params, config) {
+    const merged = Object.assign({ params }, config || {})
+    const resp = await raw.get(url, merged)
     return unwrap(resp)
   },
   async post(url, data, config) {
