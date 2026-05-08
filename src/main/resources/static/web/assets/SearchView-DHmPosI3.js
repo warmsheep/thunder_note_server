@@ -1,1 +1,0 @@
-import{E as e}from"./EmptyState-C0yZ0ejm.js";import{_ as t,c as a,g as c,o}from"./index-BoVTX_7K.js";const s={class:"page"},r={__name:"SearchView",setup(_){return(p,i)=>(o(),a("div",s,[c(e,{icon:"🔍",title:"搜索",description:"搜索能力暂未上线，将在后续阶段接入"})]))}},m=t(r,[["__scopeId","data-v-16453adb"]]);export{m as default};

@@ -44,3 +44,11 @@ export function deleteFlashNote(id) {
   }
   return apiClient.delete(`/api/flash-notes/${id}`)
 }
+
+// D1-W10 搜索闪记 + 消息内容（POST /api/flash-notes/search）
+// 返回：{ noteNameMatched: [], messageContentMatched: [] }
+export function searchFlashNotes(query) {
+  return apiClient.post('/api/flash-notes/search', {
+    query: query == null ? '' : String(query)
+  })
+}
