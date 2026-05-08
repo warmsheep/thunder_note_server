@@ -5,6 +5,7 @@ import {
   isImage,
   isVideo,
   isAudio,
+  isPdf,
   inferMediaType,
   shortenFileName
 } from './fileHelpers'
@@ -54,6 +55,13 @@ describe('media type detection', () => {
     expect(isAudio({ contentType: 'audio/mpeg' })).toBe(true)
     expect(isAudio({ fileName: 'a.mp3' })).toBe(true)
     expect(isAudio({ fileName: 'a.png' })).toBe(false)
+  })
+  it('isPdf by contentType / extension', () => {
+    expect(isPdf({ contentType: 'application/pdf' })).toBe(true)
+    expect(isPdf({ fileName: 'spec.PDF' })).toBe(true)
+    expect(isPdf({ fileName: 'spec.pdf', contentType: '' })).toBe(true)
+    expect(isPdf({ fileName: 'a.png' })).toBe(false)
+    expect(isPdf({})).toBe(false)
   })
 })
 

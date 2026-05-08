@@ -3,10 +3,13 @@
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic']
 const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', '3gp']
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr']
+// D1-W18-02 PDF inline 预览
+const PDF_EXTENSIONS = ['pdf']
 
 const IMAGE_PREFIXES = ['image/']
 const VIDEO_PREFIXES = ['video/']
 const AUDIO_PREFIXES = ['audio/']
+const PDF_PREFIXES = ['application/pdf']
 
 const KB = 1024
 const MB = 1024 * 1024
@@ -55,6 +58,14 @@ export function isAudio({ mediaType, fileName, contentType } = {}) {
   if (mediaType === 'audio') return true
   if (inMime(contentType, AUDIO_PREFIXES)) return true
   if (inExt(fileName, AUDIO_EXTENSIONS)) return true
+  return false
+}
+
+// D1-W18-02 PDF 判定：mediaType 字段不会等于 'pdf'（后端只区分 image/video/audio/file），
+// 所以仅以 contentType + 文件后缀为准
+export function isPdf({ fileName, contentType } = {}) {
+  if (inMime(contentType, PDF_PREFIXES)) return true
+  if (inExt(fileName, PDF_EXTENSIONS)) return true
   return false
 }
 

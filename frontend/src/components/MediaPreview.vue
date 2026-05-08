@@ -91,6 +91,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposeBlob()
+  disposePdfBlob()
 })
 
 // objectName 变更（比如 optimistic 消息被替换为 server 消息）时重新加载
@@ -107,19 +108,34 @@ watch(
   <div class="media-preview" :class="`kind-${previewKind}`">
     <template v-if="previewKind === 'image'">
       <div v-if="loading" class="media-stub">图片加载中...</div>
-      <img v-else-if="blobUrl" :src="blobUrl" :alt="fileName" class="media-image" />
+      <img
+        v-else-if="blobUrl"
+        :src="blobUrl"
+        :alt="fileName"
+        class="media-image"
+        @click="openLightbox"
+      />
       <div v-else class="media-stub failed">图片加载失败 · {{ fileName }}</div>
     </template>
 
     <template v-else-if="previewKind === 'video'">
       <div v-if="loading" class="media-stub">视频加载中...</div>
-      <video
-        v-else-if="blobUrl"
-        controls
-        :src="blobUrl"
-        class="media-video"
-        preload="metadata"
-      ></video>
+      <div v-else-if="blobUrl" class="media-video-wrap">
+        <video
+          ref="videoEl"
+          controls
+          :src="blobUrl"
+          class="media-video"
+          preload="metadata"
+        ></video>
+        <button
+          type="button"
+          class="video-fullscreen-btn"
+          title="全屏播放"
+          aria-label="全屏播放"
+          @click="enterVideoFullscreen"
+        >⛶</button>
+      </div>
       <div v-else class="media-stub failed">视频加载失败 · {{ fileName }}</div>
     </template>
 
@@ -136,7 +152,7 @@ watch(
     </template>
 
     <div v-else class="media-file">
-      <span class="file-icon" aria-hidden="true">📄</span>
+      <span class="file-icon" aria-hidden="true">{{ isPdfFile ? '�' : '�📄' }}</span>
       <div class="file-meta">
         <p class="file-name">{{ shortenFileName(fileName, 36) }}</p>
         <p v-if="fileSize" class="file-size">{{ formatFileSize(fileSize) }}</p>
@@ -145,12 +161,35 @@ watch(
 
     <div v-if="!isLocalBlob" class="media-actions">
       <button
+        v-if="isPdfFile"
+        type="button"
+        class="download-btn preview-btn"
+        :disabled="pdfLoading"
+        @click="openPdfPreview"
+      >{{ pdfLoading ? '加载中...' : '预览' }}</button>
+      <button
         type="button"
         class="download-btn"
         :disabled="downloading"
         @click="handleDownload"
       >{{ downloading ? '下载中...' : '下载' }}</button>
     </div>
+
+    <!-- D1-W18-01 图片全屏预览 -->
+    <ImageLightbox
+      :open="lightboxOpen"
+      :src="blobUrl || ''"
+      :alt="fileName"
+      @close="closeLightbox"
+    />
+
+    <!-- D1-W18-02 PDF 内嵌预览 -->
+    <PdfViewerDialog
+      :open="pdfDialogOpen"
+      :blob-url="pdfBlobUrl || ''"
+      :file-name="fileName"
+      @close="closePdfPreview"
+    />
   </div>
 </template>
 
@@ -179,11 +218,41 @@ watch(
   cursor: zoom-in;
   background: var(--color-bg);
 }
+.media-video-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
 .media-video {
   max-width: 100%;
   max-height: 320px;
   border-radius: var(--radius-sm);
   background: #000;
+  display: block;
+}
+.video-fullscreen-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.media-video-wrap:hover .video-fullscreen-btn {
+  opacity: 1;
+}
+.video-fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
 }
 .media-audio {
   width: 260px;
@@ -223,6 +292,7 @@ watch(
 .media-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
 }
 .download-btn {
   padding: 4px 12px;
@@ -240,5 +310,9 @@ watch(
 .download-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.preview-btn {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 </style>
