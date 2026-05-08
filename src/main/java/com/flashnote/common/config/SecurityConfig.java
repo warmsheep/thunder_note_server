@@ -36,6 +36,9 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/actuator/health").permitAll()
+                        // D1-W1-04 / D1-W1-05：放行 Web 静态资源与 SPA fallback 入口，
+                        // 受保护范围仍以 /api/** 为主；/api/** 默认走 .anyRequest().authenticated() 不被影响。
+                        .requestMatchers("/", "/index.html", "/favicon.ico", "/web", "/web/**", "/error").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

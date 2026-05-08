@@ -1,0 +1,18 @@
+/* W0 阶段最小全局样式；W12 视觉规范阶段再统一替换 */
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  background: #f9fafb;
+  color: #111827;
+  min-height: 100vh;
+}
