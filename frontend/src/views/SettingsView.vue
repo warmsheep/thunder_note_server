@@ -113,11 +113,8 @@ function goBack() {
       </ul>
     </section>
 
-    <section class="card danger-card">
-      <div class="danger-body">
-        <button type="button" class="btn-danger" @click="handleLogout">退出登录</button>
-      </div>
-    </section>
+    <!-- D1-W28-11「退出登录」按钮已统一迁到 MainShell 侧边栏底部，
+         设置页不再重复提供入口（避免三处同款）。 -->
   </div>
 </template>
 

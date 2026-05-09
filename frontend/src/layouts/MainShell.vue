@@ -111,6 +111,19 @@ async function handleLogout() {
           >{{ item.badge > 99 ? '99+' : item.badge }}</span>
         </RouterLink>
       </nav>
+      <!-- D1-W28-11 退出登录统一到侧边栏底部：原ProfileView / SettingsView 重复的
+           「退出登录」入口都已删除，避免三处同类项重复 -->
+      <div class="sidebar-bottom">
+        <button
+          type="button"
+          class="sidebar-logout"
+          @click="handleLogout"
+          title="退出当前账号"
+        >
+          <span class="sidebar-icon" aria-hidden="true">⏻</span>
+          <span class="sidebar-label">退出登录</span>
+        </button>
+      </div>
     </aside>
 
     <main class="main">
@@ -138,14 +151,7 @@ async function handleLogout() {
               <span>联系人</span>
               <span v-if="contactsStore.pendingCount > 0" class="user-menu-badge">{{ contactsStore.pendingCount }}</span>
             </RouterLink>
-            <button
-              type="button"
-              class="user-menu-item user-menu-danger"
-              role="menuitem"
-              @click="handleLogout"
-            >
-              退出登录
-            </button>
+            <!-- D1-W28-11 退出登录已迁到侧边栏底部，用户菜单不再重复展示 -->
           </div>
         </div>
       </header>
@@ -216,6 +222,34 @@ async function handleLogout() {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* D1-W28-11 让 nav 撑满 sidebar 剩余高度，把 sidebar-bottom 推到底部 */
+  flex: 1;
+  min-height: 0;
+}
+/* D1-W28-11 退出登录按钮：与 sidebar-link 同款外形 + 顶部分隔线 */
+.sidebar-bottom {
+  border-top: 1px solid var(--color-divider);
+  padding-top: 12px;
+  margin-top: auto;
+}
+.sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar-logout:hover {
+  background: var(--color-surface);
+  color: var(--color-danger);
 }
 .sidebar-link {
   display: flex;

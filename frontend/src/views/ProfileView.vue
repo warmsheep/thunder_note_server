@@ -335,12 +335,9 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
         </ul>
       </section>
 
-      <!-- 系统信息与退出已迁到独立设置页（/settings）；这里保留一个轻量的退出入口。 -->
-      <section class="card">
-        <div class="card-footer">
-          <button type="button" class="btn-danger" @click="handleLogout">退出登录</button>
-        </div>
-      </section>
+      <!-- D1-W28-11「退出登录」按钮已统一迁到 MainShell 侧边栏底部，
+           「我的」页不再重复提供入口（避免三处同款）。 -->
+
     </template>
 
     <!-- D1-W23-01 头像选择对话框 -->
