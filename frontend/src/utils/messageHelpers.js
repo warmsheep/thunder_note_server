@@ -14,6 +14,31 @@ export function isMediaPlaceholderContent(content) {
   return MEDIA_PLACEHOLDER_PATTERN.test(String(content))
 }
 
+// D1-W21-02 取消息可复制的纯文本：
+//   - 卡片消息（payload.cardType）：返回 payload.title || payload.summary
+//   - 文本消息：原 content
+//   - 媒体消息：当 content 是占位（[图片]/[视频]/...）则返回 fileName 兜底，
+//     否则返回 content（用户可能在 caption 里写了说明文字）
+//   - 兜底：fileName 或空串
+export function textOfMessage(message) {
+  if (!message) return ''
+  // 卡片
+  if (message.payload && message.payload.cardType) {
+    const t = message.payload.title || message.payload.summary || ''
+    return String(t || '').trim()
+  }
+  const raw = message.content == null ? '' : String(message.content)
+  // 媒体（仅在 content 是占位时回退到 fileName）
+  if (message.mediaType) {
+    if (isMediaPlaceholderContent(raw)) {
+      return message.fileName ? String(message.fileName) : ''
+    }
+    return raw
+  }
+  if (raw) return raw
+  return message.fileName ? String(message.fileName) : ''
+}
+
 // 在媒体气泡 / 收藏卡片场景下取真正的 caption：占位文本 → 空字符串
 export function captionForMediaContent(content) {
   if (content == null) return ''

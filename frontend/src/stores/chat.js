@@ -299,20 +299,16 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    // D1-W17-03 / D1-W20-05 转发多选消息到目标会话
-    // 后端无原生转发接口，按原顺序循环 sendMessage 到目标会话
-    // - 目标可二选一：targetFlashNoteId 或 targetPeerUserId
-    // - 仅转发文本/媒体的核心字段；卡片消息按其 content 转发文本（不复制 payload）
-    // - 失败一条不阻塞其他，返回 { successCount, failures: [{ originalId, error }] }
-    async forwardSelected({ targetFlashNoteId = null, targetPeerUserId = null, currentUserId } = {}) {
-      const ids = Array.from(this.selectedIds).filter((v) => v != null)
-      if (ids.length === 0) throw new Error('未选择任何消息')
+    // D1-W21-03 转发指定 ids（单条或多条）到目标会话；不依赖 selectedIds，
+    // 也不会改动 selectMode / selectedIds 状态，方便单条上下文菜单触发。
+    async forwardMessages({ ids, targetFlashNoteId = null, targetPeerUserId = null } = {}) {
+      const safeIds = Array.isArray(ids) ? ids.filter((v) => v != null) : []
+      if (safeIds.length === 0) throw new Error('未指定要转发的消息')
       if (targetFlashNoteId == null && targetPeerUserId == null) {
         throw new Error('未选择转发目标')
       }
-
       // 保留原顺序：messages 按 createdAt 升序，filter 后顺序与原数组一致
-      const toForward = this.messages.filter((m) => m && ids.includes(m.id))
+      const toForward = this.messages.filter((m) => m && safeIds.includes(m.id))
       const failures = []
       let successCount = 0
 
@@ -338,11 +334,22 @@ export const useChatStore = defineStore('chat', {
           })
         }
       }
+      return { successCount, failures }
+    },
 
+    // D1-W17-03 / D1-W20-05 转发多选消息到目标会话（薄包装）
+    // 后端无原生转发接口，按原顺序循环 sendMessage 到目标会话
+    // - 目标可二选一：targetFlashNoteId 或 targetPeerUserId
+    // - 仅转发文本/媒体的核心字段；卡片消息按其 content 转发文本（不复制 payload）
+    // - 失败一条不阻塞其他，返回 { successCount, failures: [{ originalId, error }] }
+    async forwardSelected({ targetFlashNoteId = null, targetPeerUserId = null, currentUserId } = {}) {
+      const ids = Array.from(this.selectedIds).filter((v) => v != null)
+      if (ids.length === 0) throw new Error('未选择任何消息')
+      const result = await this.forwardMessages({ ids, targetFlashNoteId, targetPeerUserId })
       this.selectedIds = new Set()
       this.selectMode = false
       void currentUserId
-      return { successCount, failures }
+      return result
     },
 
     // D1-W16-01 清空收集箱

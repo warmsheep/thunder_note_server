@@ -1,14 +1,15 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFavoritesStore } from '../stores/favorites'
 import { useToast } from '../composables/useToast'
 import { renderMarkdown } from '../utils/markdownRenderer'
-import { captionForMediaContent } from '../utils/messageHelpers'
+import { captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import EmptyState from '../components/EmptyState.vue'
 import MediaPreview from '../components/MediaPreview.vue'
+import MessageActionMenu from '../components/MessageActionMenu.vue'
 
 // D1-W8 收藏列表
 // - 拉 favorites/list 展示已收藏消息（W8-01）
@@ -91,6 +92,113 @@ function timeText(iso) {
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${M}/${D} ${hh}:${mm}`
 }
+
+// ---- D1-W21-05 上下文菜单（复制 / 取消收藏） ----
+const LONG_PRESS_MS = 600
+const LONG_PRESS_TOLERANCE_PX = 8
+
+const menuOpen = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+const menuTarget = ref(null)
+
+const menuItems = computed(() => {
+  if (!menuTarget.value) return []
+  return [
+    { key: 'copy', label: '复制', icon: '📋' },
+    { key: 'remove', label: '取消收藏', icon: '☆', danger: true }
+  ]
+})
+
+function openMenuAt(item, clientX, clientY) {
+  if (!item) return
+  menuTarget.value = item
+  menuX.value = Math.round(clientX)
+  menuY.value = Math.round(clientY)
+  menuOpen.value = true
+}
+
+function onContextMenuItem(e, item) {
+  if (!item || item.messageId == null) return
+  e.preventDefault()
+  openMenuAt(item, e.clientX, e.clientY)
+}
+
+// 触摸长按
+let longPressTimer = null
+let pressStart = { x: 0, y: 0 }
+let pressItem = null
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+  pressItem = null
+}
+
+function onItemTouchStart(e, item) {
+  if (!item || item.messageId == null) return
+  const t = e.touches && e.touches[0]
+  if (!t) return
+  pressItem = item
+  pressStart = { x: t.clientX, y: t.clientY }
+  clearLongPress()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    if (pressItem) {
+      openMenuAt(pressItem, pressStart.x, pressStart.y)
+      pressItem = null
+    }
+  }, LONG_PRESS_MS)
+}
+
+function onItemTouchMove(e) {
+  if (!longPressTimer) return
+  const t = e.touches && e.touches[0]
+  if (!t) return
+  const dx = Math.abs(t.clientX - pressStart.x)
+  const dy = Math.abs(t.clientY - pressStart.y)
+  if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) {
+    clearLongPress()
+  }
+}
+
+function onItemTouchEnd() {
+  clearLongPress()
+}
+
+async function onMenuSelect(key) {
+  const item = menuTarget.value
+  if (!item) return
+  if (key === 'copy') {
+    const text = textOfMessage(item)
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else if (typeof document !== 'undefined' && document.execCommand) {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      showSuccess('已复制')
+    } catch (e) {
+      showError(e?.message || '复制失败')
+    }
+  } else if (key === 'remove') {
+    handleRemove(item)
+  }
+  menuTarget.value = null
+}
+
+onBeforeUnmount(() => {
+  clearLongPress()
+})
 </script>
 
 <template>
@@ -118,6 +226,11 @@ function timeText(iso) {
           :key="item.id"
           class="fav-item"
           @click="openOrigin(item)"
+          @contextmenu="onContextMenuItem($event, item)"
+          @touchstart.passive="onItemTouchStart($event, item)"
+          @touchmove.passive="onItemTouchMove"
+          @touchend="onItemTouchEnd"
+          @touchcancel="onItemTouchEnd"
         >
           <div class="fav-flashnote">
             <span class="fn-icon" aria-hidden="true">{{ item.flashNoteIcon || '⚡' }}</span>
@@ -140,16 +253,25 @@ function timeText(iso) {
 
           <div class="fav-meta">
             <span class="fav-time">{{ timeText(item.favoritedAt) }} 收藏</span>
-            <button
-              type="button"
-              class="action danger"
-              :disabled="removingId === item.messageId"
-              @click.stop="handleRemove(item)"
-            >{{ removingId === item.messageId ? '处理中...' : '取消收藏' }}</button>
+            <span
+              v-if="removingId === item.messageId"
+              class="removing-tag"
+              aria-live="polite"
+            >处理中...</span>
+            <span v-else class="action-hint" aria-hidden="true">· 右键/长按菜单取消收藏</span>
           </div>
         </article>
       </section>
     </template>
+
+    <!-- W21-05 上下文菜单（复制 / 取消收藏） -->
+    <MessageActionMenu
+      v-model:open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      @select="onMenuSelect"
+    />
   </div>
 </template>
 
@@ -167,6 +289,14 @@ function timeText(iso) {
 .page-stats {
   font-size: 13px;
   color: var(--color-text-secondary);
+}
+.removing-tag {
+  font-size: 12px;
+  color: var(--color-text-hint);
+}
+.action-hint {
+  font-size: 12px;
+  color: var(--color-text-hint);
 }
 
 .group {

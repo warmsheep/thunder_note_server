@@ -1,15 +1,23 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
 import { renderMarkdown } from '../utils/markdownRenderer'
-import { captionForMediaContent } from '../utils/messageHelpers'
+import { captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
 import MediaPreview from './MediaPreview.vue'
+import MessageActionMenu from './MessageActionMenu.vue'
 
-// D1-W6 单条消息气泡
+// D1-W6 / D1-W21 单条消息气泡
 // - 自己发送的右对齐绿色气泡，对方/系统左对齐灰色气泡
 // - 文本：D1-W17-04 用 markdown 渲染（marked + DOMPurify）
 // - 卡片：D1-W17-02 点击 → 打开详情查看 items 列表
 // - 媒体：W8 实现
-// - 选择模式：左侧多选 checkbox；非选择模式：hover 显示删除入口
+// - 选择模式：左侧多选 checkbox；非选择模式顶右键/长按调出上下文菜单
+//
+// W21-01 上下文菜单（对齐 Android PopupMessageActions）：复制 / 转发 / 收藏 / 多选 / 删除
+//   - 右键 contextmenu 与触摸长按 600ms 两种触发
+//   - W21-04 永久按钮收敛：只保留「重试」（failed 状态限定）
+
+const LONG_PRESS_MS = 600
+const LONG_PRESS_TOLERANCE_PX = 8
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -19,7 +27,17 @@ const props = defineProps({
   favorited: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['toggle-select', 'delete', 'retry', 'toggle-favorite', 'open-card'])
+// W21-03 新增 forward-single 事件（与多选转发区分）
+// W21-01 新增 enter-select-with 事件：入口多选模式并预选中该条
+const emit = defineEmits([
+  'toggle-select',
+  'delete',
+  'retry',
+  'toggle-favorite',
+  'open-card',
+  'forward-single',
+  'enter-select-with'
+])
 
 const m = computed(() => props.message || {})
 
@@ -43,10 +61,140 @@ function timeText(iso) {
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
 }
+
+// ---- W21-01 上下文菜单状态与触发 ----
+const menuOpen = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
+
+// 可启用条件：未进多选模式、且有服务端 ID（optimistic pending/failed 不弹菜单）
+const canShowMenu = computed(() => !props.selectMode && m.value.id != null)
+
+const menuItems = computed(() => {
+  if (!canShowMenu.value) return []
+  // 联系人与闪记会话菜单项一致；UI 仅依赖事件向上冲交给 ChatView
+  return [
+    { key: 'copy', label: '复制', icon: '📋' },
+    { key: 'forward', label: '转发', icon: '↪' },
+    {
+      key: 'favorite',
+      label: props.favorited ? '取消收藏' : '收藏',
+      icon: props.favorited ? '★' : '☆'
+    },
+    { key: 'select', label: '多选', icon: '☑' },
+    { key: 'delete', label: '删除', icon: '🗑', danger: true }
+  ]
+})
+
+function openMenuAt(clientX, clientY) {
+  if (!canShowMenu.value) return
+  menuX.value = Math.round(clientX)
+  menuY.value = Math.round(clientY)
+  menuOpen.value = true
+}
+
+function onContextMenu(e) {
+  if (!canShowMenu.value) return
+  e.preventDefault()
+  openMenuAt(e.clientX, e.clientY)
+}
+
+// 触摸长按：touchstart 后计时 LONG_PRESS_MS；期间移动超过容差则取消
+let longPressTimer = null
+let pressStart = { x: 0, y: 0 }
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function onTouchStart(e) {
+  if (!canShowMenu.value) return
+  const t = e.touches && e.touches[0]
+  if (!t) return
+  pressStart = { x: t.clientX, y: t.clientY }
+  clearLongPress()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    openMenuAt(pressStart.x, pressStart.y)
+  }, LONG_PRESS_MS)
+}
+
+function onTouchMove(e) {
+  if (!longPressTimer) return
+  const t = e.touches && e.touches[0]
+  if (!t) return
+  const dx = Math.abs(t.clientX - pressStart.x)
+  const dy = Math.abs(t.clientY - pressStart.y)
+  if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) {
+    clearLongPress()
+  }
+}
+
+function onTouchEnd() {
+  clearLongPress()
+}
+
+onBeforeUnmount(() => {
+  clearLongPress()
+})
+
+// 菜单项点击处理
+async function onMenuSelect(key) {
+  switch (key) {
+    case 'copy': {
+      const text = textOfMessage(m.value)
+      try {
+        if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text)
+        } else if (typeof document !== 'undefined' && document.execCommand) {
+          // Fallback：只在老浏览器 / 非 https 环境生效
+          const ta = document.createElement('textarea')
+          ta.value = text
+          ta.style.position = 'fixed'
+          ta.style.opacity = '0'
+          document.body.appendChild(ta)
+          ta.select()
+          document.execCommand('copy')
+          document.body.removeChild(ta)
+        }
+      } catch (_e) {
+        // 静默处理；ChatView 层会由其他途径上报
+      }
+      // 向父级丢出事件，使 ChatView 可以 toast “已复制”（避免在子组件里武断引入 useToast）
+      emit('forward-single', { type: 'copied', text })
+      break
+    }
+    case 'forward':
+      emit('forward-single', { type: 'forward', message: m.value })
+      break
+    case 'favorite':
+      emit('toggle-favorite', m.value)
+      break
+    case 'select':
+      emit('enter-select-with', m.value)
+      break
+    case 'delete':
+      emit('delete', m.value)
+      break
+    default:
+      break
+  }
+}
 </script>
 
 <template>
-  <div class="bubble-row" :class="[mine ? 'mine' : 'other', { selectable: selectMode }]">
+  <div
+    class="bubble-row"
+    :class="[mine ? 'mine' : 'other', { selectable: selectMode }]"
+    @contextmenu="onContextMenu"
+    @touchstart.passive="onTouchStart"
+    @touchmove.passive="onTouchMove"
+    @touchend="onTouchEnd"
+    @touchcancel="onTouchEnd"
+  >
     <label v-if="selectMode && m.id != null" class="select-box">
       <input type="checkbox" :checked="selected" @change="emit('toggle-select', m.id)" />
     </label>
@@ -80,29 +228,31 @@ function timeText(iso) {
         <span class="time">{{ timeText(m.createdAt) }}</span>
         <span v-if="status === 'pending'" class="status-tag pending">发送中...</span>
         <span v-else-if="status === 'failed'" class="status-tag failed">发送失败</span>
+        <!-- W21-04 永久按钮收敛：仅保留「重试」（failed 状态）。
+             收藏 / 转发 / 复制 / 多选 / 删除 全部走右键/长按上下文菜单。 -->
         <button
           v-if="status === 'failed'"
           type="button"
           class="action-btn"
           @click="emit('retry', m.clientRequestId)"
         >重试</button>
-        <button
-          v-if="!selectMode && m.id != null"
-          type="button"
-          class="action-btn"
-          :class="{ favored: favorited }"
-          :aria-pressed="favorited ? 'true' : 'false'"
-          :title="favorited ? '取消收藏' : '收藏'"
-          @click="emit('toggle-favorite', m)"
-        >{{ favorited ? '★ 已收藏' : '☆ 收藏' }}</button>
-        <button
-          v-if="!selectMode && m.id != null"
-          type="button"
-          class="action-btn delete"
-          @click="emit('delete', m)"
-        >删除</button>
+        <span
+          v-if="favorited && !selectMode"
+          class="favored-mark"
+          :title="'已收藏'"
+          aria-label="已收藏"
+        >★</span>
       </div>
     </div>
+
+    <!-- W21-01 上下文菜单（Teleport 到 body，不受气泡其他样式影响） -->
+    <MessageActionMenu
+      v-model:open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      @select="onMenuSelect"
+    />
   </div>
 </template>
 
@@ -293,13 +443,12 @@ function timeText(iso) {
   border-color: var(--color-danger);
   color: var(--color-danger);
 }
-.action-btn.favored {
+/* W21-04 永久收藏标记：仅 favorited=true 时在气泡底部出现一个小星标，
+   不占多余点击面积；取消收藏走右键/长按菜单。 */
+.favored-mark {
   color: #d97706;
-  border-color: #fde68a;
-  background: #fffbeb;
-}
-.action-btn.favored:hover {
-  border-color: #d97706;
+  font-size: 12px;
+  margin-left: 2px;
 }
 
 .select-box {

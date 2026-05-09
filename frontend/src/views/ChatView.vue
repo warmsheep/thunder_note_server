@@ -137,13 +137,31 @@ const cardDetailDialog = ref({ open: false, message: null })
 
 // D1-W17-03 / D1-W20-05 转发对话框（支持会话或联系人作为目标）
 // targetType: 'flash' | 'peer'。UI 上用 tab 切换，避免一个列表则含二二混淆。
+//
+// D1-W21-03 字段增强：同一对话框同时服务「多选转发」与「单条转发」：
+//   - mode: 'multi' 走 chatStore.forwardSelected（会清 selectedIds + selectMode）
+//   - mode: 'single' 走 chatStore.forwardMessages({ ids: [singleId] })，不动其他状态
 const forwardDialog = ref({
   open: false,
   busy: false,
+  mode: 'multi', // 'multi' | 'single'
+  singleMessageId: null,
   targetType: 'flash',
   targetFlashNoteId: null,
   targetPeerUserId: null
 })
+
+function resetForwardDialog() {
+  forwardDialog.value = {
+    open: false,
+    busy: false,
+    mode: 'multi',
+    singleMessageId: null,
+    targetType: 'flash',
+    targetFlashNoteId: null,
+    targetPeerUserId: null
+  }
+}
 
 const forwardableNotes = computed(() => {
   // 排除当前会话（仅 flash 模式下才可能匹配）；优先列出非 hidden + 非 deleted 的闪记
@@ -433,43 +451,61 @@ function closeCardDetail() {
   cardDetailDialog.value = { open: false, message: null }
 }
 
-// D1-W17-03 / D1-W20-05 转发
-function askForward() {
-  if (chatStore.selectedIds.size === 0) {
-    showError('请先选择消息')
-    return
-  }
+// D1-W17-03 / D1-W20-05 / D1-W21-03 转发
+function prepareForwardLists() {
   if (!flashNotesStore.loaded) {
     flashNotesStore.fetchList({ silent: true }).catch(() => {})
   }
   if (!contactsStore.contactsLoaded) {
     contactsStore.fetchContacts({ silent: true }).catch(() => {})
   }
+}
+
+// 多选转发：header 「转发」按钮
+function askForward() {
+  if (chatStore.selectedIds.size === 0) {
+    showError('请先选择消息')
+    return
+  }
+  prepareForwardLists()
   forwardDialog.value = {
     open: true,
     busy: false,
-    // 在联系人会话中默认先转发到闪记，减少误操；闪记会话同理
+    mode: 'multi',
+    singleMessageId: null,
     targetType: 'flash',
     targetFlashNoteId: null,
     targetPeerUserId: null
   }
 }
+
+// W21-03 单条转发：MessageBubble 上下文菜单 「转发」按钮
+function askForwardSingle(message) {
+  if (!message || message.id == null) return
+  prepareForwardLists()
+  forwardDialog.value = {
+    open: true,
+    busy: false,
+    mode: 'single',
+    singleMessageId: message.id,
+    targetType: 'flash',
+    targetFlashNoteId: null,
+    targetPeerUserId: null
+  }
+}
+
 function cancelForward() {
   if (forwardDialog.value.busy) return
-  forwardDialog.value = {
-    open: false,
-    busy: false,
-    targetType: 'flash',
-    targetFlashNoteId: null,
-    targetPeerUserId: null
-  }
+  resetForwardDialog()
 }
+
 function setForwardTab(type) {
   if (forwardDialog.value.busy) return
   forwardDialog.value.targetType = type
   forwardDialog.value.targetFlashNoteId = null
   forwardDialog.value.targetPeerUserId = null
 }
+
 async function confirmForward() {
   const fwd = forwardDialog.value
   const targetFlashNoteId = fwd.targetType === 'flash' ? fwd.targetFlashNoteId : null
@@ -480,18 +516,22 @@ async function confirmForward() {
   }
   forwardDialog.value.busy = true
   try {
-    const { successCount, failures } = await chatStore.forwardSelected({
-      targetFlashNoteId,
-      targetPeerUserId,
-      currentUserId: currentUserId.value
-    })
-    forwardDialog.value = {
-      open: false,
-      busy: false,
-      targetType: 'flash',
-      targetFlashNoteId: null,
-      targetPeerUserId: null
+    let result
+    if (fwd.mode === 'single' && fwd.singleMessageId != null) {
+      result = await chatStore.forwardMessages({
+        ids: [fwd.singleMessageId],
+        targetFlashNoteId,
+        targetPeerUserId
+      })
+    } else {
+      result = await chatStore.forwardSelected({
+        targetFlashNoteId,
+        targetPeerUserId,
+        currentUserId: currentUserId.value
+      })
     }
+    const { successCount, failures } = result
+    resetForwardDialog()
     if (failures.length === 0) {
       showSuccess(`已转发 ${successCount} 条`)
     } else if (successCount === 0) {
@@ -502,6 +542,25 @@ async function confirmForward() {
   } catch (e) {
     forwardDialog.value.busy = false
     showError(e?.serverMessage || e?.message || '转发失败')
+  }
+}
+
+// W21-01 上下文菜单 「多选」：进多选模式并预选中该条
+function enterSelectModeWith(message) {
+  if (!message || message.id == null) return
+  if (!chatStore.selectMode) chatStore.enterSelectMode()
+  chatStore.toggleSelect(message.id)
+}
+
+// W21-02 MessageBubble forward-single 事件在 type='copied' 时上报，这里仅负责 toast
+function onBubbleForwardSingle(payload) {
+  if (!payload || typeof payload !== 'object') return
+  if (payload.type === 'copied') {
+    showSuccess('已复制')
+    return
+  }
+  if (payload.type === 'forward') {
+    askForwardSingle(payload.message)
   }
 }
 </script>
@@ -591,6 +650,8 @@ async function confirmForward() {
           @retry="handleRetry"
           @toggle-favorite="handleToggleFavorite"
           @open-card="openCardDetail"
+          @forward-single="onBubbleForwardSingle"
+          @enter-select-with="enterSelectModeWith"
         />
       </template>
 
@@ -710,7 +771,10 @@ async function confirmForward() {
           <button type="button" class="modal-close" @click="cancelForward">×</button>
         </header>
         <div class="modal-body">
-          <p class="modal-desc">将所选 {{ chatStore.selectedIds.size }} 条消息转发到闪记或联系人。</p>
+          <p class="modal-desc">
+            <template v-if="forwardDialog.mode === 'single'">将这条消息转发到闪记或联系人。</template>
+            <template v-else>将所选 {{ chatStore.selectedIds.size }} 条消息转发到闪记或联系人。</template>
+          </p>
           <!-- W20-05 目标类型 tab：闪记 / 联系人，二选一 -->
           <div class="forward-tabs" role="tablist">
             <button

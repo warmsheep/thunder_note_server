@@ -479,4 +479,58 @@ describe('chat store', () => {
       expect(store.conversationKey).toBeNull()
     })
   })
+
+  // D1-W21-03 单条转发：forwardMessages 不依赖 selectedIds，也不动状态
+  describe('forwardMessages (D1-W21)', () => {
+    it('用外部 ids 转发到 flash 目标，不动 selectedIds / selectMode', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(1, 'a', '2026-01-01T00:00:00'),
+        msg(2, 'b', '2026-01-02T00:00:00')
+      ], 1, 2))
+      messagesApi.sendMessage.mockResolvedValueOnce({ id: 1001, content: 'a' })
+      const store = useChatStore()
+      await store.openConversation(7)
+      // 故意进入多选并选中其他消息，验证 forwardMessages 不会清掉这个状态
+      store.enterSelectMode()
+      store.toggleSelect(2)
+      const r = await store.forwardMessages({ ids: [1], targetFlashNoteId: 88 })
+      expect(messagesApi.sendMessage).toHaveBeenCalledTimes(1)
+      expect(messagesApi.sendMessage.mock.calls[0][0].flashNoteId).toBe(88)
+      expect(r).toEqual({ successCount: 1, failures: [] })
+      // selectedIds / selectMode 保持原状
+      expect(store.selectMode).toBe(true)
+      expect(store.selectedIds.has(2)).toBe(true)
+    })
+
+    it('用外部 ids 转发到 peer 目标', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(1, 'a', '2026-01-01T00:00:00')
+      ], 1, 1))
+      messagesApi.sendMessage.mockResolvedValueOnce({ id: 1002 })
+      const store = useChatStore()
+      await store.openConversation(7)
+      const r = await store.forwardMessages({ ids: [1], targetPeerUserId: 99 })
+      expect(messagesApi.sendMessage).toHaveBeenCalledTimes(1)
+      expect(messagesApi.sendMessage.mock.calls[0][0].receiverId).toBe(99)
+      expect(messagesApi.sendMessage.mock.calls[0][0].flashNoteId).toBeNull()
+      expect(r.successCount).toBe(1)
+    })
+
+    it('空 ids 拒绝', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([], 1, 0))
+      const store = useChatStore()
+      await store.openConversation(7)
+      await expect(store.forwardMessages({ ids: [], targetFlashNoteId: 1 })).rejects.toThrow(/未指定/)
+    })
+
+    it('两个目标都缺少时拒绝', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(1, 'a', '2026-01-01T00:00:00')
+      ], 1, 1))
+      const store = useChatStore()
+      await store.openConversation(7)
+      await expect(store.forwardMessages({ ids: [1] })).rejects.toThrow(/转发目标/)
+      expect(messagesApi.sendMessage).not.toHaveBeenCalled()
+    })
+  })
 })

@@ -11,7 +11,8 @@ import {
   buildInitialMessages,
   replaceOptimisticByClientId,
   isMediaPlaceholderContent,
-  captionForMediaContent
+  captionForMediaContent,
+  textOfMessage
 } from './messageHelpers'
 
 describe('inbox helpers', () => {
@@ -175,5 +176,47 @@ describe('replaceOptimisticByClientId', () => {
     const server = { id: 1 }
     const next = replaceOptimisticByClientId(messages, server)
     expect(next).toHaveLength(1)
+  })
+})
+
+// D1-W21-02 textOfMessage：复制消息时取的纯文本
+describe('textOfMessage', () => {
+  it('text message returns content', () => {
+    expect(textOfMessage({ content: 'hello' })).toBe('hello')
+  })
+  it('card message returns payload.title || payload.summary', () => {
+    expect(
+      textOfMessage({
+        content: '[卡片消息]',
+        payload: { cardType: 'COMPOSITE_CARD', title: '会议纪要', summary: 'xxx' }
+      })
+    ).toBe('会议纪要')
+    expect(
+      textOfMessage({
+        payload: { cardType: 'COMPOSITE_CARD', summary: '只有摘要' }
+      })
+    ).toBe('只有摘要')
+  })
+  it('media message with placeholder content returns fileName', () => {
+    expect(
+      textOfMessage({
+        content: '[图片]',
+        mediaType: 'IMAGE',
+        fileName: 'cat.png'
+      })
+    ).toBe('cat.png')
+  })
+  it('media message with real caption keeps caption', () => {
+    expect(
+      textOfMessage({
+        content: '快看这只猫',
+        mediaType: 'IMAGE',
+        fileName: 'cat.png'
+      })
+    ).toBe('快看这只猫')
+  })
+  it('null/empty message returns empty string', () => {
+    expect(textOfMessage(null)).toBe('')
+    expect(textOfMessage({})).toBe('')
   })
 })
