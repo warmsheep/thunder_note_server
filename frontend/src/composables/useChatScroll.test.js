@@ -278,4 +278,132 @@ describe('useChatScroll', () => {
   })
 })
 
+// D1-W28-06 reversed 模式（微博风）测试：scrollTop 语义反转
+describe('useChatScroll reversed mode', () => {
+  beforeEach(() => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear()
+    }
+  })
+
+  it('reversed=true 时 scrollToBottom 应当 scrollTop=0（视觉顶部）', () => {
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('fn:1'),
+        messages: ref([]),
+        reversed: true
+      })
+    )
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 500 })
+    result.scrollerRef.value = scroller
+    result.scrollToBottom()
+    expect(scroller.scrollTop).toBe(0)
+    expect(result.isAtBottom.value).toBe(true)
+    unmount()
+  })
+
+  it('reversed=false 时 scrollToBottom 应当 scrollTop=scrollHeight', () => {
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('peer:1'),
+        messages: ref([]),
+        reversed: false
+      })
+    )
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 0 })
+    result.scrollerRef.value = scroller
+    result.scrollToBottom()
+    expect(scroller.scrollTop).toBe(1000)
+    unmount()
+  })
+
+  it('reversed=true 时 scrollTop 远离 0 触发 loadMore（向下滑看老消息）', async () => {
+    const onLoadMore = vi.fn(async () => {})
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('fn:1'),
+        messages: ref([{ id: 10 }]),
+        shouldLoadMore: () => true,
+        onLoadMore,
+        reversed: true
+      })
+    )
+    // 用户在 reversed 模式下「靠近底部」（看到老消息边缘）：distanceToBottom 接近 0
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 580 })
+    // distance = 1000 - 580 - 400 = 20 < 80 阈值
+    result.scrollerRef.value = scroller
+    await result.handleScroll()
+    expect(onLoadMore).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
+  it('reversed=true 时 scrollTop=0 不触发 loadMore（视觉顶部 = 看最新）', async () => {
+    const onLoadMore = vi.fn()
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('fn:1'),
+        messages: ref([]),
+        shouldLoadMore: () => true,
+        onLoadMore,
+        reversed: true
+      })
+    )
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 0 })
+    result.scrollerRef.value = scroller
+    await result.handleScroll()
+    expect(onLoadMore).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('reversed=true loadMore 完成后不主动调整 scrollTop（column-reverse 由浏览器自动维持）', async () => {
+    const messages = ref([{ id: 10 }])
+    const onLoadMore = vi.fn(async () => {
+      messages.value = [{ id: 8 }, ...messages.value]
+    })
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('fn:1'),
+        messages,
+        shouldLoadMore: () => true,
+        onLoadMore,
+        reversed: true
+      })
+    )
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 580 })
+    result.scrollerRef.value = scroller
+    // 模拟 loadMore 后 scrollHeight 增大
+    onLoadMore.mockImplementationOnce(async () => {
+      messages.value = [{ id: 8 }, ...messages.value]
+      scroller.scrollHeight = 1500
+    })
+    const before = scroller.scrollTop
+    await result.handleScroll()
+    expect(onLoadMore).toHaveBeenCalled()
+    // reversed 模式不主动改 scrollTop
+    expect(scroller.scrollTop).toBe(before)
+    unmount()
+  })
+
+  it('reversed 接受 ref / getter / boolean 三种入参', async () => {
+    const reversedRef = ref(true)
+    const { result, unmount } = runInComponent(() =>
+      useChatScroll({
+        conversationKey: ref('fn:1'),
+        messages: ref([]),
+        reversed: reversedRef
+      })
+    )
+    const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 500 })
+    result.scrollerRef.value = scroller
+    result.scrollToBottom()
+    expect(scroller.scrollTop).toBe(0) // reversed=true → 顶部
+    // 切换 ref 值
+    reversedRef.value = false
+    scroller.scrollTop = 0
+    result.scrollToBottom()
+    expect(scroller.scrollTop).toBe(1000) // reversed=false → 贴底
+    unmount()
+  })
+})
+
 // happy-dom 默认就支持 sessionStorage，不需要额外 setup。

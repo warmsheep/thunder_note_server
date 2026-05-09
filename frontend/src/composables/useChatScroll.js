@@ -30,6 +30,18 @@ function sessionKey(conversationKey) {
   return `${SESSION_KEY_PREFIX}${conversationKey}`
 }
 
+// D1-W28-06 reversed 模式（微博风）滑动语义反转：
+//   - 不抱 reversed 时（IM 默认）：
+//       * 最新在顶部；DOM 顺序 [最旧 → 最新]
+//       * scrollTop 近 0 → loadMore（看更老）
+//       * append 后跳到 scrollHeight（贴底）
+//       * 「isAtBottom」表示贴底（靠近最新一条）
+//   - reversed=true 时（微博风）：
+//       * DOM 顺序 仍为 [最旧 → 最新]（store 不动），CSS flex-direction: column-reverse 让最新在视觉顶部
+//       * 浏览器下颚反转后，scrollTop=0 仍表示「视觉顶部」（看最新）
+//       * 但「看更老消息」是往下滑，所以 loadMore 触发在 distanceToBottom < threshold
+//       * append 后不需要主动滑动（column-reverse 会自动保持视觉顶部贴顶）。如果用户在往下看老消息，留 hasNewBelow=true 提示
+
 function bottomKeyOf(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return null
   const last = arr[arr.length - 1]
@@ -48,8 +60,16 @@ export function useChatScroll({
   shouldLoadMore = () => false,
   onLoadMore = null,
   bottomThreshold = BOTTOM_THRESHOLD,
-  loadMoreThreshold = LOAD_MORE_THRESHOLD
+  loadMoreThreshold = LOAD_MORE_THRESHOLD,
+  // D1-W28-06 reversed 可以传 ref / getter / boolean，在运行期读取当前值
+  reversed = false
 } = {}) {
+  function getReversed() {
+    if (reversed == null) return false
+    if (typeof reversed === 'function') return Boolean(reversed())
+    if (typeof reversed === 'object' && 'value' in reversed) return Boolean(reversed.value)
+    return Boolean(reversed)
+  }
   const scrollerRef = ref(null)
   const isAtBottom = ref(true)
   const hasNewBelow = ref(false)
@@ -80,23 +100,33 @@ export function useChatScroll({
     return el.scrollHeight - el.scrollTop - el.clientHeight
   }
 
+  // 「贴底/贴顶」靠近最新消息的判定：
+  //   - 默认 IM：最新在贴底，判断 distanceToBottom
+  //   - reversed 微博风：CSS column-reverse 下「视觉顶部」在 scrollTop=0，判断 scrollTop 小于阈值
   function computeAtBottom() {
     const el = scrollerRef.value
     if (!el) return true
+    if (getReversed()) {
+      return el.scrollTop < bottomThreshold
+    }
     return distanceToBottom() < bottomThreshold
   }
 
+  // scrollToBottom 语义：「跳到最新消息位置」
+  //   - IM 默认：scrollTop = scrollHeight
+  //   - reversed 微博风：scrollTop = 0（视觉顶部）
   function scrollToBottom({ smooth = false } = {}) {
     const el = scrollerRef.value
     if (!el) return
+    const targetTop = getReversed() ? 0 : el.scrollHeight
     if (smooth && typeof el.scrollTo === 'function') {
       try {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+        el.scrollTo({ top: targetTop, behavior: 'smooth' })
       } catch (_e) {
-        el.scrollTop = el.scrollHeight
+        el.scrollTop = targetTop
       }
     } else {
-      el.scrollTop = el.scrollHeight
+      el.scrollTop = targetTop
     }
     isAtBottom.value = true
     hasNewBelow.value = false
@@ -109,8 +139,15 @@ export function useChatScroll({
     if (isAtBottom.value) {
       hasNewBelow.value = false
     }
+    // loadMore 触发位置：
+    //   - IM：scrollTop 靠近 0（看老消息的方向）
+    //   - reversed 微博风：distanceToBottom 靠近0（往下滑看老消息）
+    const isReversed = getReversed()
+    const nearLoadEdge = isReversed
+      ? distanceToBottom() < loadMoreThreshold
+      : el.scrollTop < loadMoreThreshold
     if (
-      el.scrollTop < loadMoreThreshold &&
+      nearLoadEdge &&
       typeof shouldLoadMore === 'function' &&
       shouldLoadMore() &&
       typeof onLoadMore === 'function'
@@ -122,10 +159,13 @@ export function useChatScroll({
         await nextTick()
         const after = scrollerRef.value
         if (after) {
-          // 维持当前可见 anchor：新 scrollTop = 旧 scrollTop + (新 scrollHeight - 旧 scrollHeight)
-          // 历史 ChatView 旧代码漏了"+ beforeScrollTop"项，导致 scrollTop 较大时视觉位置会突跳；
-          // 现在 W19-03 显式修正。
-          after.scrollTop = beforeScrollTop + (after.scrollHeight - beforeHeight)
+          // 维持当前可见 anchor：
+          //   IM：新 scrollTop = 旧 scrollTop + (新 scrollHeight - 旧 scrollHeight)
+          //   reversed：DOM 追加到顶部（老消息）后，视觉上出现在顶部 anchor 以下，
+          //   scrollTop 不需要动；column-reverse 下浏览器自动维持 scrollTop 不变。
+          if (!isReversed) {
+            after.scrollTop = beforeScrollTop + (after.scrollHeight - beforeHeight)
+          }
         }
       } catch (_e) {
         // 错误由调用方/store 处理

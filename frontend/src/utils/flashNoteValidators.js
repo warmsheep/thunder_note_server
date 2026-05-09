@@ -3,6 +3,17 @@
 const TITLE_MAX_LENGTH = 500
 const ICON_MAX_LENGTH = 64
 
+// D1-W28-02 合集单选切换：
+//   - 当前 tags 不等于 name → 切换为 name
+//   - 当前 tags 等于 name → 清空（即「不分入合集」）
+// 用于 NoteEditDialog chip 点击行为，纯函数易测
+export function toggleSingleTag(currentTags, name) {
+  const cur = currentTags == null ? '' : String(currentTags)
+  const target = name == null ? '' : String(name)
+  if (cur === target) return ''
+  return target
+}
+
 export function validateTitle(value, { required = true } = {}) {
   const v = (value || '').trim()
   if (!v) {

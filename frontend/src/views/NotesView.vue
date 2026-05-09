@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFlashNotesStore } from '../stores/flashNotes'
 import { useChatStore } from '../stores/chat'
+import { useCollectionsStore } from '../stores/collections'
 import { useAuthStore } from '../stores/auth'
 import { useSearchStore } from '../stores/search'
 import { useToast } from '../composables/useToast'
@@ -28,10 +29,11 @@ import CardEditorDialog from '../components/CardEditorDialog.vue'
 // - 收集箱（inbox=true）固定置顶展示，不可编辑/删除/隐藏
 // - 普通闪记按 pinned/normal/hidden 三段展示，hidden 折叠
 // - 列表项菜单：编辑、置顶/取消置顶、隐藏/取消隐藏、删除（带二次确认）
-// - W5-04/W5-06 暂不接合集字段（当前 DTO 无 collection；W7 落地后再补回填）
+// - D1-W28-02 NoteEditDialog 已接入合集 chip：编辑/创建闪记时可单选合集（tags 字段）
 
 const store = useFlashNotesStore()
 const chatStore = useChatStore()
+const collectionsStore = useCollectionsStore()
 const authStore = useAuthStore()
 const searchStore = useSearchStore()
 const { showSuccess, showError } = useToast()
@@ -104,6 +106,10 @@ onMounted(() => {
       // 错误状态由 store.error 驱动 ErrorState
     })
   }
+  // D1-W28-02 NoteEditDialog 需要合集列表来源；与闪记列表并行拉取，失败静默
+  if (!collectionsStore.loaded) {
+    collectionsStore.fetchList({ silent: true }).catch(() => {})
+  }
 })
 
 const isInitialLoading = computed(() => store.loading && !store.loaded)
@@ -124,7 +130,8 @@ function openEdit(note) {
   editDialog.value = {
     open: true,
     mode: 'edit',
-    initial: { title: note.title, icon: note.icon },
+    // D1-W28-02 把当前 tags（合集名）一并塞进 initial，让 NoteEditDialog 高亮当前合集
+    initial: { title: note.title, icon: note.icon, tags: note.tags || '' },
     target: note
   }
 }
@@ -651,6 +658,7 @@ void currentUserId
       :mode="editDialog.mode"
       :initial="editDialog.initial"
       :busy="store.submitting"
+      :collections="collectionsStore.sortedList"
       @submit="handleEditSubmit"
       @cancel="closeEdit"
     />

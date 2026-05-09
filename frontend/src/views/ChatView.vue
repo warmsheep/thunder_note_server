@@ -52,7 +52,10 @@ const draftLoadedKey = ref(null)
 // W20 从路由参数推出会话身份。
 // route.name === 'contact-chat' 时走 peerUserId 模式；
 // 其余（'chat'）走 flashNoteId 模式，含收集箱 -1。
+// D1-W28-06 闪记会话走微博风布局：顶部 composer + column-reverse 消息流，
+// 联系人对话仍是传统 IM 底部 composer + 顶老下新。
 const isContactRoute = computed(() => route.name === 'contact-chat')
+const isFlashMode = computed(() => !isContactRoute.value)
 const peerUserId = computed(() =>
   isContactRoute.value && route.params.peerUserId != null ? Number(route.params.peerUserId) : null
 )
@@ -82,7 +85,9 @@ const {
   conversationKey,
   messages: computed(() => chatStore.messages),
   shouldLoadMore: () => chatStore.hasMore && !chatStore.loadingMore,
-  onLoadMore: () => chatStore.loadMore()
+  onLoadMore: () => chatStore.loadMore(),
+  // D1-W28-06 传 reversed=isFlashMode 让 useChatScroll 语义在闪记模式下反转
+  reversed: isFlashMode
 })
 
 // W20 联系人信息：从 contactsStore 查找当前 peer；不一定在列表内（刚加的朋友或路由直进场景）
@@ -741,14 +746,6 @@ function onBubbleForwardSingle(payload) {
         <span class="header-text">{{ headerTitle }}</span>
       </div>
       <div class="header-actions">
-        <!-- W22-03 新卡片入口：仅非多选状态时显示，避免与多选 toolbar 视觉冲突 -->
-        <button
-          v-if="!chatStore.selectMode"
-          type="button"
-          class="header-btn"
-          :title="'新建多媒体卡片'"
-          @click="openCardEditor"
-        >📇 新卡片</button>
         <button type="button" class="header-btn" @click="toggleSelectMode">
           {{ chatStore.selectMode ? '取消多选' : '多选' }}
         </button>
@@ -785,8 +782,23 @@ function onBubbleForwardSingle(payload) {
       </div>
     </header>
 
+    <!-- D1-W28-06 \u95ea\u8bb0\u4f1a\u8bdd\uff1a\u5fae\u535a\u98ce\u5e03\u5c40\u3002composer \u4e0a\u63d0\u5230 main \u4e4b\u4e0a\uff0c
+         main \u8d70 column-reverse\uff0c\u6700\u65b0\u6d88\u606f\u8d34 composer \u4e0b\u65b9\uff0c\u5f80\u4e0b\u6ed1 = \u770b\u8001\u6d88\u606f -->
+    <MessageComposer
+      v-if="isFlashMode"
+      ref="composerRef"
+      class="chat-composer chat-composer-top"
+      :busy="chatStore.sending || uploading"
+      :upload-progress="uploadProgress"
+      @submit="handleSend"
+      @submit-voice="handleSendVoice"
+      @open-card-editor="openCardEditor"
+      @overflow="onComposerOverflow"
+    />
+
     <main
       class="chat-scroll"
+      :class="{ 'chat-scroll-reversed': isFlashMode }"
       ref="scrollerRef"
       @scroll="handleScroll"
     >
@@ -800,9 +812,9 @@ function onBubbleForwardSingle(payload) {
         <div v-if="chatStore.loadingMore" class="load-more-tip">加载历史中...</div>
         <EmptyState
           v-if="showEmpty"
-          icon="💬"
+          icon="\ud83d\udcac"
           title="还没有消息"
-          description="在下方输入并按 Enter 发送第一条消息"
+          :description="isFlashMode ? '在上方输入并按 Enter 发送第一条消息' : '在下方输入并按 Enter 发送第一条消息'"
         />
         <MessageBubble
           v-for="m in chatStore.messages"
@@ -823,26 +835,29 @@ function onBubbleForwardSingle(payload) {
         />
       </template>
 
-      <!-- D1-W19-01 回到底部悬浮按钮：仅当用户滚出底部时显示；
-           hasNewBelow 表示有新消息到达 → 圆点提示 -->
+      <!-- D1-W19-01 \u5fae\u535a\u98ce\u4e0b scrollToBottom \u8bed\u4e49\u53d8\u4e3a\u300c\u8df3\u5230\u6700\u65b0\u300d\uff08\u89c6\u89c9\u9876\u90e8\uff09\uff1b\n           \u4f20\u7edf\u6a21\u5f0f\u4e0b\u4ecd\u4e3a\u300c\u56de\u5230\u5e95\u90e8\u300d\u3002\u6587\u6848\u4e24\u8005\u90fd\u662f\u300c\u65b0\u6d88\u606f\u300d -->
       <button
         v-if="hasNewBelow"
         type="button"
         class="jump-to-bottom"
-        :title="'有新消息，点击回到底部'"
+        :title="isFlashMode ? '\u6709\u65b0\u6d88\u606f\uff0c\u70b9\u51fb\u8df3\u5230\u6700\u65b0' : '\u6709\u65b0\u6d88\u606f\uff0c\u70b9\u51fb\u56de\u5230\u5e95\u90e8'"
         @click="scrollToBottom({ smooth: true })"
       >
-        <span class="jump-arrow" aria-hidden="true">⬇</span>
-        <span class="jump-text">新消息</span>
+        <span class="jump-arrow" aria-hidden="true">{{ isFlashMode ? '\u2b06' : '\u2b07' }}</span>
+        <span class="jump-text">\u65b0\u6d88\u606f</span>
       </button>
     </main>
 
+    <!-- D1-W28-06 \u8054\u7cfb\u4eba\u5bf9\u8bdd\u7ee7\u7eed\u8d70\u5e95\u90e8 composer\uff08\u4f20\u7edf IM\uff09 -->
     <MessageComposer
+      v-if="!isFlashMode"
       ref="composerRef"
+      class="chat-composer chat-composer-bottom"
       :busy="chatStore.sending || uploading"
       :upload-progress="uploadProgress"
       @submit="handleSend"
       @submit-voice="handleSendVoice"
+      @open-card-editor="openCardEditor"
       @overflow="onComposerOverflow"
     />
 
@@ -1262,6 +1277,22 @@ function onBubbleForwardSingle(payload) {
   display: flex;
   flex-direction: column;
   position: relative; /* 给 jump-to-bottom 提供定位上下文 */
+}
+
+/* D1-W28-06 闪记会话微博风：column-reverse + 顶部 composer
+   - DOM 顺序仍为 [最旧 → 最新]（store 不动）
+   - column-reverse 让最新在视觉顶部
+   - jump-to-bottom 在 column-reverse 下要改用 top 定位 */
+.chat-scroll-reversed {
+  flex-direction: column-reverse;
+}
+.chat-scroll-reversed .jump-to-bottom {
+  bottom: auto;
+  top: 8px;
+}
+/* 闪记模式 composer 顶部分隔线在底（与 main 衔接） */
+.chat-composer-top {
+  border-bottom: 1px solid var(--color-divider);
 }
 
 /* D1-W19-01 回到底部悬浮按钮：sticky + bottom，跟随容器滚动而非整页固定 */

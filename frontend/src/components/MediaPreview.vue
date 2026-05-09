@@ -10,6 +10,7 @@ import { notifyAudioPlay, notifyAudioPauseOrEnded } from '../composables/useExcl
 import ImageLightbox from './ImageLightbox.vue'
 import PdfViewerDialog from './PdfViewerDialog.vue'
 import TextViewerDialog from './TextViewerDialog.vue'
+import VoicePlayer from './VoicePlayer.vue'
 
 // D1-W9 / D1-W18 媒体消息渲染：
 // - image / video / audio: fetch blob → URL.createObjectURL，解决鉴权下载问题
@@ -292,26 +293,15 @@ watch(
 
     <template v-else-if="previewKind === 'audio'">
       <div v-if="loading" class="media-stub">{{ isVoiceMessage ? '语音加载中...' : '音频加载中...' }}</div>
-      <!-- D1-W27-03 VOICE 专属布局：紧凑播放器 + 时长标签；普通 audio 文件继续走宽 audio controls -->
+      <!-- D1-W28-03 VOICE 专属：自绘 VoicePlayer，去除原生 audio controls 黑框；
+           普通 audio 文件继续走原生 audio controls -->
       <template v-else-if="blobUrl">
-        <div
+        <VoicePlayer
           v-if="isVoiceMessage"
-          class="voice-bubble"
-          :style="{ width: voiceWidthPx + 'px' }"
-        >
-          <span class="voice-icon" aria-hidden="true">🎙</span>
-          <audio
-            ref="audioEl"
-            controls
-            :src="blobUrl"
-            class="media-audio voice-audio"
-            preload="metadata"
-            @play="onAudioPlay"
-            @pause="onAudioPauseOrEnded"
-            @ended="onAudioPauseOrEnded"
-          ></audio>
-          <span v-if="voiceDurationSec > 0" class="voice-duration">{{ formatVoiceDuration(voiceDurationSec) }}</span>
-        </div>
+          :src="blobUrl"
+          :duration="voiceDurationSec"
+          :width-px="voiceWidthPx"
+        />
         <audio
           v-else
           ref="audioEl"
@@ -452,32 +442,7 @@ watch(
   width: 260px;
   max-width: 100%;
 }
-/* D1-W27-03 VOICE 紧凑播放器布局 */
-.voice-bubble {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-divider);
-  border-radius: 18px;
-  max-width: 100%;
-}
-.voice-icon {
-  font-size: 16px;
-  line-height: 1;
-}
-.voice-audio {
-  width: 100%;
-  min-width: 80px;
-  max-width: 100%;
-}
-.voice-duration {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* D1-W28-03 VOICE 紧凑播放器已迁移到独立组件 VoicePlayer，原 .voice-bubble 样式删除 */
 
 .media-file {
   display: flex;

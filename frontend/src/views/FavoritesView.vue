@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { useFavoritesStore } from '../stores/favorites'
 import { useToast } from '../composables/useToast'
 import { renderMarkdown } from '../utils/markdownRenderer'
-import { captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
+import { buildCardSummary, captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import EmptyState from '../components/EmptyState.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import CardMediaGrid from '../components/CardMediaGrid.vue'
+import CardDetailDialog from '../components/CardDetailDialog.vue'
 
 // D1-W8 收藏列表
 // - 拉 favorites/list 展示已收藏消息（W8-01）
@@ -66,10 +68,32 @@ function isMediaItem(item) {
   return Boolean(item && item.mediaType) && !isCardItem(item)
 }
 
-// 卡片摘要：[卡片] 标题
-function cardSummary(item) {
-  if (!item || !item.payload) return ''
-  return `[卡片] ${item.payload.title || item.payload.cardType || ''}`
+// D1-W28-05 卡片预览：与 MessageBubble 对齐
+// - cardItemsOf：payload.items（图片/视频/音频/文件）
+// - cardFileItemsOf：仅 FILE / VOICE / AUDIO（独立列表行渲染）
+// - cardSummaryOf：buildCardSummary(payload) 智能兜底
+function cardItemsOf(item) {
+  const items = item && item.payload && item.payload.items
+  return Array.isArray(items) ? items : []
+}
+function cardFileItemsOf(item) {
+  return cardItemsOf(item).filter((it) => {
+    const t = (it && it.type ? String(it.type) : '').toUpperCase()
+    return t === 'FILE' || t === 'VOICE' || t === 'AUDIO'
+  })
+}
+function cardSummaryOf(item) {
+  return buildCardSummary(item && item.payload)
+}
+
+// D1-W28-05 卡片详情对话框：与 ChatView 同款，复用 CardDetailDialog
+const cardDetailDialog = ref({ open: false, message: null })
+function openCardDetail(item) {
+  if (!item) return
+  cardDetailDialog.value = { open: true, message: item }
+}
+function closeCardDetail() {
+  cardDetailDialog.value = { open: false, message: null }
 }
 
 // 媒体气泡下方的 caption：过滤后端 [图片] / [视频] / [文件] 占位
@@ -256,8 +280,36 @@ onBeforeUnmount(() => {
             <span class="fn-title">{{ item.flashNoteTitle || '未知闪记' }}</span>
           </div>
 
-          <!-- 卡片：仅摘要 -->
-          <p v-if="isCardItem(item)" class="fav-content">{{ cardSummary(item) }}</p>
+          <!-- D1-W28-05 卡片完整预览：与 ChatView 气泡同款的 CardMediaGrid + 文件列表 + summary，
+               点击「查看详情」打开 CardDetailDialog（不冒泡到 openOrigin） -->
+          <template v-if="isCardItem(item)">
+            <button
+              type="button"
+              class="fav-card-clickable"
+              :title="'查看卡片详情'"
+              @click.stop="openCardDetail(item)"
+            >
+              <p class="fav-card-type">📇 卡片</p>
+              <p v-if="item.payload.title" class="fav-card-title">{{ item.payload.title }}</p>
+              <CardMediaGrid
+                v-if="cardItemsOf(item).length"
+                :items="cardItemsOf(item)"
+                @open="openCardDetail(item)"
+              />
+              <ul v-if="cardFileItemsOf(item).length" class="fav-card-file-list">
+                <li
+                  v-for="(f, i) in cardFileItemsOf(item)"
+                  :key="i"
+                  class="fav-card-file-row"
+                >
+                  <span class="fav-card-file-icon" aria-hidden="true">📎</span>
+                  <span class="fav-card-file-name">{{ f.fileName || (f.type || 'FILE') }}</span>
+                </li>
+              </ul>
+              <p v-if="cardSummaryOf(item)" class="fav-card-summary">{{ cardSummaryOf(item) }}</p>
+              <p class="fav-card-hint">点击查看详情</p>
+            </button>
+          </template>
 
           <!-- 媒体：复用 MediaPreview（图片/视频/音频缩略图，PDF / 文本 / Office 文件卡片） -->
           <template v-else-if="isMediaItem(item)">
@@ -290,6 +342,13 @@ onBeforeUnmount(() => {
       :y="menuY"
       :items="menuItems"
       @select="onMenuSelect"
+    />
+
+    <!-- D1-W28-05 卡片详情：复用 ChatView 同款 CardDetailDialog -->
+    <CardDetailDialog
+      v-model:open="cardDetailDialog.open"
+      :message="cardDetailDialog.message"
+      @close="closeCardDetail"
     />
   </div>
 </template>
@@ -390,6 +449,71 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* D1-W28-05 收藏页卡片预览：与 MessageBubble 卡片气泡视觉一致，但去掉气泡边框，
+   作为收藏卡片的「内嵌区域」呈现 */
+.fav-card-clickable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.fav-card-clickable:hover .fav-card-title {
+  text-decoration: underline;
+}
+.fav-card-type {
+  margin: 0 0 4px 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.fav-card-title {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+.fav-card-summary {
+  margin: 6px 0 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.fav-card-hint {
+  margin: 6px 0 0 0;
+  font-size: 11px;
+  color: var(--color-text-hint);
+}
+.fav-card-file-list {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fav-card-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.fav-card-file-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.fav-card-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* markdown 文本收藏：与 chat 气泡同款排版（块级元素的 margin / list 缩进） */

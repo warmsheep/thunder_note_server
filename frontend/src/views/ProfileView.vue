@@ -334,12 +334,8 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
               <span class="chevron">›</span>
             </span>
           </li>
-          <li class="link-row" @click="$router.push('/change-password')">
-            <span class="kv-label">修改密码</span>
-            <span class="kv-value">
-              <span class="chevron">›</span>
-            </span>
-          </li>
+          <!-- D1-W28-01 「修改密码」入口去重：与 SettingsView 「通用 / 修改密码」重复，
+               信息架构按「我的 → 设置 → 修改密码」收敛，这里只保留「设置」入口。 -->
           <li class="link-row" @click="$router.push({ name: 'settings' })">
             <span class="kv-label">⚙ 设置</span>
             <span class="kv-value">

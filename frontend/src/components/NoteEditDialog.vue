@@ -10,7 +10,7 @@ export const FLASHNOTE_ICONS = [
 
 <script setup>
 import { ref, watch } from 'vue'
-import { validateCreateForm, validateUpdateForm } from '../utils/flashNoteValidators'
+import { validateCreateForm, validateUpdateForm, toggleSingleTag } from '../utils/flashNoteValidators'
 
 // 创建/编辑闪记弹窗
 // - props.open: 控制可见
@@ -26,13 +26,18 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   mode: { type: String, default: 'create' }, // 'create' | 'edit'
   initial: { type: Object, default: () => ({}) },
-  busy: { type: Boolean, default: false }
+  busy: { type: Boolean, default: false },
+  // D1-W28-02 合集列表来源：父级注入 useCollectionsStore().sortedList，不在弹窗内自取数据
+  // 与后端约束对齐：FlashNote.tags 是单一字符串，等于 collection.name；空串/null 表示「不分入合集」
+  collections: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['submit', 'cancel'])
 
 const title = ref('')
 const icon = ref('')
+// D1-W28-02 tags 当前后端语义为单一合集名字符串；空串=不分入合集
+const tags = ref('')
 const errorMessage = ref('')
 
 watch(
@@ -41,6 +46,7 @@ watch(
     if (open) {
       title.value = props.initial?.title || ''
       icon.value = props.initial?.icon || ''
+      tags.value = props.initial?.tags || ''
       errorMessage.value = ''
     }
   },
@@ -49,13 +55,29 @@ watch(
 
 function handleSubmit() {
   errorMessage.value = ''
-  const payload = { title: title.value.trim(), icon: icon.value.trim() }
+  const payload = {
+    title: title.value.trim(),
+    icon: icon.value.trim(),
+    // D1-W28-02 后端约定：tags 字段更新时必须显式传字符串，空串表示「移出合集」
+    // FlashNoteUpdateRequest.tags 走 @TableField(updateStrategy=ALWAYS)，传 "" 会真正写入空
+    tags: tags.value.trim()
+  }
   const result = props.mode === 'edit' ? validateUpdateForm(payload) : validateCreateForm(payload)
   if (!result.ok) {
     errorMessage.value = result.message
     return
   }
   emit('submit', payload)
+}
+
+// D1-W28-02 单选合集：复用 toggleSingleTag 纯函数，让行为可独立单测
+function pickCollection(name) {
+  if (props.busy) return
+  tags.value = toggleSingleTag(tags.value, name)
+}
+
+function isCollectionSelected(name) {
+  return tags.value === name
 }
 
 // D1-W26-03 选中预设图标 → 写入 icon 字段；再次点击同一项 → 取消选中（清空）
@@ -93,6 +115,33 @@ function isPresetSelected(emoji) {
                 required
               />
             </label>
+            <!-- D1-W28-02 合集（可选）：单选 chip 网格，点击切换；无合集时仅渲染说明 + 「无」chip
+                 与 Android `DialogFlashNoteEdit` 的合集 Spinner 等价但走 chip 形式 -->
+            <div class="field">
+              <span>合集（可选）</span>
+              <div class="collection-row">
+                <button
+                  type="button"
+                  class="collection-chip"
+                  :class="{ active: !tags }"
+                  :disabled="busy"
+                  :aria-pressed="!tags"
+                  @click="pickCollection('')"
+                >无</button>
+                <button
+                  v-for="c in collections"
+                  :key="c.id"
+                  type="button"
+                  class="collection-chip"
+                  :class="{ active: isCollectionSelected(c.name) }"
+                  :disabled="busy"
+                  :aria-pressed="isCollectionSelected(c.name)"
+                  :title="c.description || c.name"
+                  @click="pickCollection(c.name)"
+                >{{ c.name }}</button>
+              </div>
+              <p v-if="!collections.length" class="field-hint">还没有合集，可在「合集」页面创建后回来选择</p>
+            </div>
             <div class="field">
               <span>图标（可选）</span>
               <!-- D1-W26-03 12 项 emoji 预设网格 + 自定义输入混合，对齐 Android `flashnote_icons` -->
@@ -201,6 +250,45 @@ function isPresetSelected(emoji) {
   color: var(--color-danger);
   border-radius: var(--radius-sm);
   font-size: 13px;
+}
+
+/* D1-W28-02 合集 chip：横向自适应换行，单选高亮，与图标 chip 视觉一致但宽度自由 */
+.collection-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.collection-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collection-chip:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.collection-chip.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+.collection-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.field-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-hint);
 }
 
 /* D1-W26-03 图标 chip 网格：6×2 布局，移动端 ≤480 自动换 4 列 */

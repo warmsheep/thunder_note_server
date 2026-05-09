@@ -3,7 +3,8 @@ import {
   validateTitle,
   validateIcon,
   validateCreateForm,
-  validateUpdateForm
+  validateUpdateForm,
+  toggleSingleTag
 } from './flashNoteValidators'
 
 describe('validateTitle', () => {
@@ -63,5 +64,29 @@ describe('validateUpdateForm', () => {
   })
   it('accepts undefined title (means no change)', () => {
     expect(validateUpdateForm({ icon: '📝' }).ok).toBe(true)
+  })
+})
+
+// D1-W28-02 NoteEditDialog 单选合集 chip：toggleSingleTag 是其点击行为的纯函数版本
+describe('toggleSingleTag', () => {
+  it('当前为空 + 选某 chip → 切到该 chip', () => {
+    expect(toggleSingleTag('', '工作')).toBe('工作')
+    expect(toggleSingleTag(null, '生活')).toBe('生活')
+    expect(toggleSingleTag(undefined, '阅读')).toBe('阅读')
+  })
+  it('当前为 A + 选 B → 切到 B', () => {
+    expect(toggleSingleTag('工作', '生活')).toBe('生活')
+  })
+  it('当前为 A + 再选 A → 清空（即「不分入合集」）', () => {
+    expect(toggleSingleTag('工作', '工作')).toBe('')
+  })
+  it('选「无」（空字符串 chip）→ 始终回到空', () => {
+    expect(toggleSingleTag('工作', '')).toBe('')
+    expect(toggleSingleTag('', '')).toBe('')
+    expect(toggleSingleTag(null, '')).toBe('')
+  })
+  it('数字 / 非字符串入参也安全转字符串', () => {
+    expect(toggleSingleTag(123, '123')).toBe('')
+    expect(toggleSingleTag('1', 1)).toBe('')
   })
 })

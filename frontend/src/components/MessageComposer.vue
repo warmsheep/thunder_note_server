@@ -44,7 +44,13 @@ const cameraBtnVisible = computed(() =>
   props.showCameraBtn === null ? autoShowCamera.value : !!props.showCameraBtn
 )
 
-const emit = defineEmits(['submit', 'submit-voice', 'overflow'])
+const emit = defineEmits(['submit', 'submit-voice', 'overflow', 'open-card-editor'])
+
+// D1-W28-04 卡片按钮控制：默认显示，联系人对话 / 只读场景可以由父级关闭
+function openCardEditor() {
+  if (props.busy) return
+  emit('open-card-editor')
+}
 
 // D1-W27-02 浏览器录音状态机
 const recorder = useVoiceRecorder()
@@ -481,6 +487,15 @@ defineExpose({
         :aria-label="'录制语音'"
         @click="startRecording"
       >🎤</button>
+      <!-- D1-W28-04 新建多媒体卡片：与附件、拍照、录音同位，点击 → 父级打开 CardEditorDialog -->
+      <button
+        type="button"
+        class="attach-btn"
+        :disabled="busy"
+        :title="'新建卡片'"
+        :aria-label="'新建卡片'"
+        @click="openCardEditor"
+      >📇</button>
 
       <textarea
         ref="textareaEl"
