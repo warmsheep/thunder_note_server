@@ -15,6 +15,7 @@ import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { uploadFile } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
+import { useChatScroll } from '../composables/useChatScroll'
 
 // D1-W6 单条会话页（独立顶级路由 /chat/:flashNoteId）
 // - 进入时根据 :flashNoteId 拉首页（page=1, limit=30）
@@ -31,11 +32,26 @@ const authStore = useAuthStore()
 const { showSuccess, showError } = useToast()
 
 const composerRef = ref(null)
-const scrollerRef = ref(null)
 const uploadProgress = ref(0)
 const uploading = ref(false)
 
 const flashNoteId = computed(() => Number(route.params.flashNoteId))
+
+// D1-W19 滚动行为统一：scrollerRef / scrollToBottom / handleScroll / 新消息提示
+// / sessionStorage 位置记忆等都封装在 useChatScroll 里。
+const {
+  scrollerRef,
+  hasNewBelow,
+  scrollToBottom,
+  handleScroll,
+  rememberScroll,
+  restoreScrollOrBottom
+} = useChatScroll({
+  flashNoteId,
+  messages: computed(() => chatStore.messages),
+  shouldLoadMore: () => chatStore.hasMore && !chatStore.loadingMore,
+  onLoadMore: () => chatStore.loadMore()
+})
 
 const headerTitle = computed(() => {
   if (isInboxFlashNoteId(flashNoteId.value)) {
@@ -117,8 +133,8 @@ async function reload() {
   }
   try {
     await chatStore.openConversation(flashNoteId.value)
-    await nextTick()
-    scrollToBottom()
+    // W19-02 进入会话优先恢复 sessionStorage 上次位置，没有再滚到底
+    await restoreScrollOrBottom()
   } catch (_e) {
     // 错误展示由 store.error 驱动
   }
@@ -137,42 +153,22 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // W19-02 离开会话前记下当前 scrollTop（按 flashNoteId 隔离）
+  rememberScroll()
   chatStore.reset()
 })
 
 watch(
   () => route.params.flashNoteId,
-  () => {
-    if (route.name === 'chat') {
-      reload()
+  (next, prev) => {
+    if (route.name !== 'chat') return
+    // 切换到下一个会话前先把当前位置写入 sessionStorage，再 reload
+    if (prev != null && String(prev) !== String(next)) {
+      rememberScroll()
     }
+    reload()
   }
 )
-
-function scrollToBottom() {
-  const el = scrollerRef.value
-  if (!el) return
-  el.scrollTop = el.scrollHeight
-}
-
-async function handleScroll() {
-  const el = scrollerRef.value
-  if (!el) return
-  // 接近顶部触发加载历史，记录当前 scrollHeight 以便保持视觉位置
-  if (el.scrollTop < 80 && chatStore.hasMore && !chatStore.loadingMore) {
-    const beforeHeight = el.scrollHeight
-    try {
-      await chatStore.loadMore()
-      await nextTick()
-      const after = scrollerRef.value
-      if (after) {
-        after.scrollTop = after.scrollHeight - beforeHeight
-      }
-    } catch (_e) {
-      // 错误已经被 store 捕获
-    }
-  }
-}
 
 // MessageComposer @submit 的 payload 是 { text, file }
 //   - text：字符串文本（可能为空）
@@ -224,7 +220,8 @@ async function handleSend(payload) {
     })
     composerRef.value?.reset()
     await nextTick()
-    scrollToBottom()
+    // W19-03 发送后强制平滑滚到底部（用户主动操作的反馈）
+    scrollToBottom({ smooth: true })
   } catch (e) {
     // W6-06：失败保留输入，仅 toast
     showError(e?.serverMessage || e?.message || '发送失败')
@@ -332,7 +329,8 @@ async function confirmMerge() {
     mergeDialog.value = { open: false, busy: false, title: '' }
     showSuccess('已合并为卡片')
     await nextTick()
-    scrollToBottom()
+    // W19-03 合并卡片成功后跟随到底
+    scrollToBottom({ smooth: true })
   } catch (e) {
     mergeDialog.value.busy = false
     showError(e?.serverMessage || e?.message || '合并失败')
@@ -469,6 +467,19 @@ async function confirmForward() {
           @open-card="openCardDetail"
         />
       </template>
+
+      <!-- D1-W19-01 回到底部悬浮按钮：仅当用户滚出底部时显示；
+           hasNewBelow 表示有新消息到达 → 圆点提示 -->
+      <button
+        v-if="hasNewBelow"
+        type="button"
+        class="jump-to-bottom"
+        :title="'有新消息，点击回到底部'"
+        @click="scrollToBottom({ smooth: true })"
+      >
+        <span class="jump-arrow" aria-hidden="true">⬇</span>
+        <span class="jump-text">新消息</span>
+      </button>
     </main>
 
     <MessageComposer
@@ -888,6 +899,41 @@ async function confirmForward() {
   padding: 16px;
   display: flex;
   flex-direction: column;
+  position: relative; /* 给 jump-to-bottom 提供定位上下文 */
+}
+
+/* D1-W19-01 回到底部悬浮按钮：sticky + bottom，跟随容器滚动而非整页固定 */
+.jump-to-bottom {
+  position: sticky;
+  bottom: 8px;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  /* 让按钮浮在最新消息上方一点点；负 margin 避免占用 chat 列表本身的空间 */
+  margin-top: -36px;
+  margin-bottom: 4px;
+  z-index: 5;
+  transition: transform 0.15s, background 0.15s;
+}
+.jump-to-bottom:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
+}
+.jump-arrow {
+  font-size: 14px;
+  line-height: 1;
+}
+.jump-text {
+  font-size: 12px;
 }
 .load-more-tip {
   text-align: center;
