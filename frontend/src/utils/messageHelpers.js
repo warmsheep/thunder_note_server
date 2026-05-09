@@ -60,8 +60,14 @@ export function newClientRequestId() {
 }
 
 // 创建 optimistic 消息：status='pending'，等 server 返回后被替换。
+// D1-W20-03 改造：支持联系人 1v1 模式
+//   - flashNoteId 模式：flashNoteId 必填，receiverId 仍为 null（后端按当前用户填）
+//   - peerUserId 模式：peerUserId 必填，flashNoteId 留空；optimistic 上 receiverId=peerUserId
+//     便于 isOwnMessage / mine 判定（mine 看 senderId === currentUserId 即可，
+//     receiverId 仅用于 1v1 视觉判断和后续过滤）
 export function createOptimisticMessage({
-  flashNoteId,
+  flashNoteId = null,
+  peerUserId = null,
   content,
   clientRequestId,
   currentUserId,
@@ -76,8 +82,8 @@ export function createOptimisticMessage({
   return {
     id: null,
     senderId: currentUserId,
-    receiverId: null,
-    flashNoteId,
+    receiverId: peerUserId != null ? Number(peerUserId) : null,
+    flashNoteId: flashNoteId != null ? Number(flashNoteId) : null,
     content: content || '',
     role,
     createdAt: new Date().toISOString(),

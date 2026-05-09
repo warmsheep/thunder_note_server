@@ -271,7 +271,8 @@ describe('chat store', () => {
     expect(messagesApi.mergeMessages).toHaveBeenCalledWith({
       title: 'merged',
       messageIds: [1, 2],
-      flashNoteId: 7
+      flashNoteId: 7,
+      receiverId: null
     })
     expect(result).toEqual(card)
     expect(store.messages.map((m) => m.id)).toEqual([1, 2, 1001])
@@ -335,13 +336,147 @@ describe('chat store', () => {
     expect(r.failures[0]).toMatchObject({ originalId: 2, error: '禁止访问' })
   })
 
-  it('forwardSelected refuses when targetFlashNoteId is missing', async () => {
+  it('forwardSelected refuses when no target chosen (flash and peer both null)', async () => {
     messagesApi.listMessages.mockResolvedValueOnce(pageOf([msg(1, 'a', '2026-01-01T00:00:00')]))
     const store = useChatStore()
     await store.openConversation(7)
     store.enterSelectMode()
     store.toggleSelect(1)
-    await expect(store.forwardSelected({ targetFlashNoteId: null })).rejects.toThrow(/目标闪记/)
+    await expect(
+      store.forwardSelected({ targetFlashNoteId: null, targetPeerUserId: null })
+    ).rejects.toThrow(/转发目标/)
     expect(messagesApi.sendMessage).not.toHaveBeenCalled()
+  })
+
+  // D1-W20-03 联系人 1v1 模式
+  describe('peer mode (D1-W20)', () => {
+    it('openConversation({ peerUserId }) 走 peer 模式，listMessages 传 peerUserId，mode = peer', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(101, 'hi', '2026-02-01T00:00:00')
+      ], 1, 1))
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      expect(messagesApi.listMessages).toHaveBeenCalledWith({
+        flashNoteId: null,
+        peerUserId: 42,
+        page: 1,
+        limit: 30
+      })
+      expect(store.peerUserId).toBe(42)
+      expect(store.flashNoteId).toBeNull()
+      expect(store.mode).toBe('peer')
+      expect(store.isPeerMode).toBe(true)
+      expect(store.isFlashMode).toBe(false)
+      expect(store.conversationKey).toBe('peer:42')
+      expect(store.isInbox).toBe(false)
+    })
+
+    it('flash 模式 conversationKey 为 fn:<id>，收集箱为 fn:-1', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([], 1, 0))
+      const store = useChatStore()
+      await store.openConversation({ flashNoteId: -1 })
+      expect(store.conversationKey).toBe('fn:-1')
+      expect(store.isInbox).toBe(true)
+    })
+
+    it('peer 模式 send 会传 receiverId 不传 flashNoteId', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([], 1, 0))
+      messagesApi.sendMessage.mockResolvedValueOnce({
+        id: 200,
+        clientRequestId: 'cr-x',
+        senderId: 1,
+        receiverId: 42,
+        content: 'hi'
+      })
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      await store.send({ content: 'hi', currentUserId: 1 })
+      expect(messagesApi.sendMessage).toHaveBeenCalledTimes(1)
+      const args = messagesApi.sendMessage.mock.calls[0][0]
+      expect(args.flashNoteId).toBeNull()
+      expect(args.receiverId).toBe(42)
+      expect(args.content).toBe('hi')
+    })
+
+    it('peer 模式 loadMore 会传 peerUserId', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(10, 'a', '2026-01-01T00:00:00'),
+        msg(11, 'b', '2026-01-02T00:00:00')
+      ], 1, 2))
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      // 人工推到还有第 2 页
+      store.pages = 2
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(8, 'older', '2025-12-31T00:00:00')
+      ], 2, 3))
+      await store.loadMore()
+      const lastCall = messagesApi.listMessages.mock.calls.at(-1)[0]
+      expect(lastCall.peerUserId).toBe(42)
+      expect(lastCall.flashNoteId).toBeNull()
+      expect(lastCall.page).toBe(2)
+    })
+
+    it('peer 模式 mergeSelected 传 receiverId，不传 flashNoteId', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(1, 'a', '2026-01-01T00:00:00'),
+        msg(2, 'b', '2026-01-02T00:00:00')
+      ], 1, 2))
+      const card = {
+        id: 999,
+        mediaType: 'COMPOSITE',
+        receiverId: 42,
+        content: 'merged',
+        payload: { cardType: 'MESSAGE_COLLECTION', title: 'merged' }
+      }
+      messagesApi.mergeMessages.mockResolvedValueOnce(card)
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      store.enterSelectMode()
+      store.toggleSelect(1)
+      store.toggleSelect(2)
+      await store.mergeSelected({ title: 'merged' })
+      expect(messagesApi.mergeMessages).toHaveBeenCalledWith({
+        title: 'merged',
+        messageIds: [1, 2],
+        flashNoteId: null,
+        receiverId: 42
+      })
+    })
+
+    it('forwardSelected 支持 targetPeerUserId（联系人作为转发目标）', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([
+        msg(1, 'a', '2026-01-01T00:00:00')
+      ], 1, 1))
+      messagesApi.sendMessage.mockResolvedValueOnce({ id: 1001, content: 'a' })
+      const store = useChatStore()
+      await store.openConversation(7)
+      store.enterSelectMode()
+      store.toggleSelect(1)
+      const r = await store.forwardSelected({ targetPeerUserId: 99 })
+      expect(messagesApi.sendMessage).toHaveBeenCalledTimes(1)
+      const args = messagesApi.sendMessage.mock.calls[0][0]
+      expect(args.flashNoteId).toBeNull()
+      expect(args.receiverId).toBe(99)
+      expect(r.successCount).toBe(1)
+    })
+
+    it('peer 模式 clearInbox 拒绝（只有闪记收集箱才能清空）', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([], 1, 0))
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      await expect(store.clearInbox()).rejects.toThrow(/收集箱/)
+    })
+
+    it('reset 同时清空 flashNoteId 和 peerUserId', async () => {
+      messagesApi.listMessages.mockResolvedValueOnce(pageOf([], 1, 0))
+      const store = useChatStore()
+      await store.openConversation({ peerUserId: 42 })
+      store.reset()
+      expect(store.peerUserId).toBeNull()
+      expect(store.flashNoteId).toBeNull()
+      expect(store.mode).toBeNull()
+      expect(store.conversationKey).toBeNull()
+    })
   })
 })

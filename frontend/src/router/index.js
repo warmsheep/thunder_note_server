@@ -80,6 +80,15 @@ const router = createRouter({
       component: () => import('../views/ChatView.vue'),
       meta: { requiresAuth: true }
     },
+    // D1-W20-01 联系人 1v1 对话独立顶级路由（与闪记会话并列）。
+    // 路径精确匹配 contact/<positive-int>，不会与 /chat/:flashNoteId 冲突
+    // （后者正则是 -?\\d+，遇到 "contact" 字面量就 mismatch）。
+    {
+      path: '/chat/contact/:peerUserId(\\d+)',
+      name: 'contact-chat',
+      component: () => import('../views/ChatView.vue'),
+      meta: { requiresAuth: true }
+    },
     {
       path: '/:pathMatch(.*)*',
       redirect: '/'

@@ -68,8 +68,18 @@ describe('messages api wrappers', () => {
     expect(captured).toEqual({ flashNoteId: -1, peerUserId: null, page: 1, limit: 30 })
   })
 
-  it('listMessages rejects when flashNoteId is missing', async () => {
-    await expect(listMessages({})).rejects.toThrow(/flashNoteId/)
+  it('listMessages rejects when both flashNoteId and peerUserId are missing', async () => {
+    await expect(listMessages({})).rejects.toThrow(/flashNoteId or peerUserId/)
+  })
+
+  it('listMessages with peerUserId posts peerUserId-only body', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = JSON.parse(config.data)
+      return { status: 200, data: apiResponse({ records: [] }), headers: {}, config }
+    })
+    await listMessages({ peerUserId: 42 })
+    expect(captured).toEqual({ flashNoteId: null, peerUserId: 42, page: 1, limit: 30 })
   })
 
   it('sendMessage posts content/role/clientRequestId to /api/messages', async () => {
@@ -104,8 +114,22 @@ describe('messages api wrappers', () => {
     expect(captured.content).toBe('123')
   })
 
-  it('sendMessage rejects when flashNoteId is missing', async () => {
-    await expect(sendMessage({ content: 'hi' })).rejects.toThrow(/flashNoteId/)
+  it('sendMessage rejects when both flashNoteId and receiverId are missing', async () => {
+    await expect(sendMessage({ content: 'hi' })).rejects.toThrow(/flashNoteId or receiverId/)
+  })
+
+  it('sendMessage with receiverId posts receiverId-only body (no flashNoteId field)', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = JSON.parse(config.data)
+      return { status: 200, data: apiResponse({ id: 7 }), headers: {}, config }
+    })
+    await sendMessage({ receiverId: 42, content: 'hi', clientRequestId: 'cr-x' })
+    // peer 模式下不应部携 flashNoteId，只携 receiverId
+    expect(captured.flashNoteId).toBeUndefined()
+    expect(captured.receiverId).toBe(42)
+    expect(captured.content).toBe('hi')
+    expect(captured.clientRequestId).toBe('cr-x')
   })
 
   it('deleteMessage sends DELETE to /api/messages/:id', async () => {

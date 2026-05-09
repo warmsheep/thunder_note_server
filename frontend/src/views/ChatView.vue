@@ -5,6 +5,7 @@ import { useChatStore } from '../stores/chat'
 import { useFlashNotesStore } from '../stores/flashNotes'
 import { useFavoritesStore } from '../stores/favorites'
 import { useAuthStore } from '../stores/auth'
+import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
 import { isOwnMessage, isInboxFlashNoteId } from '../utils/messageHelpers'
 import LoadingState from '../components/LoadingState.vue'
@@ -13,15 +14,23 @@ import EmptyState from '../components/EmptyState.vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
 import { uploadFile } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
 import { useChatScroll } from '../composables/useChatScroll'
 
-// D1-W6 单条会话页（独立顶级路由 /chat/:flashNoteId）
-// - 进入时根据 :flashNoteId 拉首页（page=1, limit=30）
+// D1-W6 / D1-W20 单条会话页（独立顶级路由）。
+// W20 后同一个 ChatView 同时承担两种会话身份：
+//   - 闪记会话（route.name === 'chat'）：route.params.flashNoteId
+//   - 联系人 1v1（route.name === 'contact-chat'）：route.params.peerUserId
+// store / useChatScroll 都是按 mode 驱动；这里仅负责从路由读出身份、调起 store、
+// 在 header 里提供不同的标题 / 图标 / 状态。
+//
+// - 进入时根据当前身份拉首页（page=1, limit=30）
 // - 滚动到顶部触发 loadMore
 // - 发送：optimistic + serverMessage 替换；失败保留输入并标红消息
 // - 删除：单条 + 多选两种入口，都走 ConfirmDialog 二次确认
+// - 联系人模式下不显示“清空收集箱”按钮。
 
 const route = useRoute()
 const router = useRouter()
@@ -29,13 +38,32 @@ const chatStore = useChatStore()
 const flashNotesStore = useFlashNotesStore()
 const favoritesStore = useFavoritesStore()
 const authStore = useAuthStore()
+const contactsStore = useContactsStore()
 const { showSuccess, showError } = useToast()
 
 const composerRef = ref(null)
 const uploadProgress = ref(0)
 const uploading = ref(false)
 
-const flashNoteId = computed(() => Number(route.params.flashNoteId))
+// W20 从路由参数推出会话身份。
+// route.name === 'contact-chat' 时走 peerUserId 模式；
+// 其余（'chat'）走 flashNoteId 模式，含收集箱 -1。
+const isContactRoute = computed(() => route.name === 'contact-chat')
+const peerUserId = computed(() =>
+  isContactRoute.value && route.params.peerUserId != null ? Number(route.params.peerUserId) : null
+)
+const flashNoteId = computed(() =>
+  isContactRoute.value || route.params.flashNoteId == null
+    ? null
+    : Number(route.params.flashNoteId)
+)
+
+// useChatScroll 驱动用的会话键（与 store getter 一致）
+const conversationKey = computed(() => {
+  if (peerUserId.value != null) return `peer:${peerUserId.value}`
+  if (flashNoteId.value != null) return `fn:${flashNoteId.value}`
+  return null
+})
 
 // D1-W19 滚动行为统一：scrollerRef / scrollToBottom / handleScroll / 新消息提示
 // / sessionStorage 位置记忆等都封装在 useChatScroll 里。
@@ -47,13 +75,24 @@ const {
   rememberScroll,
   restoreScrollOrBottom
 } = useChatScroll({
-  flashNoteId,
+  conversationKey,
   messages: computed(() => chatStore.messages),
   shouldLoadMore: () => chatStore.hasMore && !chatStore.loadingMore,
   onLoadMore: () => chatStore.loadMore()
 })
 
+// W20 联系人信息：从 contactsStore 查找当前 peer；不一定在列表内（刚加的朋友或路由直进场景）
+const peerContact = computed(() => {
+  if (peerUserId.value == null) return null
+  return contactsStore.findContactById(peerUserId.value)
+})
+
 const headerTitle = computed(() => {
+  if (isContactRoute.value) {
+    const c = peerContact.value
+    if (c) return c.nickname || c.username || `用户 ${peerUserId.value}`
+    return `用户 ${peerUserId.value ?? ''}`
+  }
   if (isInboxFlashNoteId(flashNoteId.value)) {
     return '收集箱'
   }
@@ -63,10 +102,18 @@ const headerTitle = computed(() => {
 })
 
 const headerIcon = computed(() => {
+  if (isContactRoute.value) {
+    const c = peerContact.value
+    if (c && c.avatar) return null // 使用 AuthenticatedAvatar 渲染
+    return '👤'
+  }
   if (isInboxFlashNoteId(flashNoteId.value)) return '📥'
   const note = flashNotesStore.list.find((n) => n && Number(n.id) === flashNoteId.value)
   return note?.icon || '⚡'
 })
+
+// W20 背景：联系人模式备用头像 URL（造一个给 AuthenticatedAvatar 的轻量赋值）
+const peerAvatar = computed(() => peerContact.value?.avatar || null)
 
 const currentUserId = computed(() => authStore.user?.id ?? null)
 
@@ -88,20 +135,36 @@ const mergeDialog = ref({ open: false, busy: false, title: '' })
 // D1-W17-02 卡片详情对话框（只读，后端无 update 接口）
 const cardDetailDialog = ref({ open: false, message: null })
 
-// D1-W17-03 转发对话框
-const forwardDialog = ref({ open: false, busy: false, targetFlashNoteId: null })
+// D1-W17-03 / D1-W20-05 转发对话框（支持会话或联系人作为目标）
+// targetType: 'flash' | 'peer'。UI 上用 tab 切换，避免一个列表则含二二混淆。
+const forwardDialog = ref({
+  open: false,
+  busy: false,
+  targetType: 'flash',
+  targetFlashNoteId: null,
+  targetPeerUserId: null
+})
 
 const forwardableNotes = computed(() => {
-  // 排除当前会话；优先列出非 inbox + 非 hidden + 非 deleted 的闪记
+  // 排除当前会话（仅 flash 模式下才可能匹配）；优先列出非 hidden + 非 deleted 的闪记
   return (flashNotesStore.list || []).filter(
     (n) => n
       && !n.deleted
       && !n.hidden
-      && Number(n.id) !== flashNoteId.value
+      && (isContactRoute.value || Number(n.id) !== flashNoteId.value)
   )
 })
 
-const isInbox = computed(() => isInboxFlashNoteId(flashNoteId.value))
+// W20-05 可选联系人：仅正式好友 (FRIEND)；联系人会话本身转发时排除自己
+const forwardableContacts = computed(() => {
+  return (contactsStore.contacts || []).filter(
+    (c) => c
+      && c.relationStatus === 'FRIEND'
+      && (peerUserId.value == null || Number(c.userId) !== peerUserId.value)
+  )
+})
+
+const isInbox = computed(() => !isContactRoute.value && isInboxFlashNoteId(flashNoteId.value))
 
 function askClearInbox() {
   clearInboxDialog.value = { open: true, busy: false }
@@ -127,12 +190,25 @@ async function confirmClearInbox() {
 }
 
 async function reload() {
+  if (isContactRoute.value) {
+    if (peerUserId.value == null || Number.isNaN(peerUserId.value)) {
+      router.replace('/contacts')
+      return
+    }
+    try {
+      await chatStore.openConversation({ peerUserId: peerUserId.value })
+      await restoreScrollOrBottom()
+    } catch (_e) {
+      // store.error 驱动
+    }
+    return
+  }
   if (flashNoteId.value == null || Number.isNaN(flashNoteId.value)) {
     router.replace('/notes')
     return
   }
   try {
-    await chatStore.openConversation(flashNoteId.value)
+    await chatStore.openConversation({ flashNoteId: flashNoteId.value })
     // W19-02 进入会话优先恢复 sessionStorage 上次位置，没有再滚到底
     await restoreScrollOrBottom()
   } catch (_e) {
@@ -149,6 +225,10 @@ onMounted(() => {
   if (!favoritesStore.loaded) {
     favoritesStore.fetchList({ silent: true }).catch(() => {})
   }
+  // W20 联系人模式需要联系人列表才能显示对方昵称/头像；转发对话框也需要
+  if (!contactsStore.contactsLoaded) {
+    contactsStore.fetchContacts({ silent: true }).catch(() => {})
+  }
   reload()
 })
 
@@ -158,12 +238,18 @@ onBeforeUnmount(() => {
   chatStore.reset()
 })
 
+// W20 路由参数变化： flashNoteId / peerUserId / route.name 任一变 → 切会话。
+// 切之前先 rememberScroll，再 reload。
 watch(
-  () => route.params.flashNoteId,
-  (next, prev) => {
-    if (route.name !== 'chat') return
-    // 切换到下一个会话前先把当前位置写入 sessionStorage，再 reload
-    if (prev != null && String(prev) !== String(next)) {
+  () => [route.name, route.params.flashNoteId, route.params.peerUserId],
+  ([nextName, nextFn, nextPeer], prev) => {
+    if (nextName !== 'chat' && nextName !== 'contact-chat') return
+    const [prevName, prevFn, prevPeer] = prev || []
+    const changed =
+      prevName !== nextName
+      || String(prevFn) !== String(nextFn)
+      || String(prevPeer) !== String(nextPeer)
+    if (prevName != null && changed) {
       rememberScroll()
     }
     reload()
@@ -289,7 +375,8 @@ function goBack() {
   if (window.history.length > 1) {
     router.back()
   } else {
-    router.replace('/notes')
+    // W20: 联系人会话 fallback 回联系人页；闪记会话回主列表
+    router.replace(isContactRoute.value ? '/contacts' : '/notes')
   }
 }
 
@@ -346,7 +433,7 @@ function closeCardDetail() {
   cardDetailDialog.value = { open: false, message: null }
 }
 
-// D1-W17-03 转发
+// D1-W17-03 / D1-W20-05 转发
 function askForward() {
   if (chatStore.selectedIds.size === 0) {
     showError('请先选择消息')
@@ -355,25 +442,56 @@ function askForward() {
   if (!flashNotesStore.loaded) {
     flashNotesStore.fetchList({ silent: true }).catch(() => {})
   }
-  forwardDialog.value = { open: true, busy: false, targetFlashNoteId: null }
+  if (!contactsStore.contactsLoaded) {
+    contactsStore.fetchContacts({ silent: true }).catch(() => {})
+  }
+  forwardDialog.value = {
+    open: true,
+    busy: false,
+    // 在联系人会话中默认先转发到闪记，减少误操；闪记会话同理
+    targetType: 'flash',
+    targetFlashNoteId: null,
+    targetPeerUserId: null
+  }
 }
 function cancelForward() {
   if (forwardDialog.value.busy) return
-  forwardDialog.value = { open: false, busy: false, targetFlashNoteId: null }
+  forwardDialog.value = {
+    open: false,
+    busy: false,
+    targetType: 'flash',
+    targetFlashNoteId: null,
+    targetPeerUserId: null
+  }
+}
+function setForwardTab(type) {
+  if (forwardDialog.value.busy) return
+  forwardDialog.value.targetType = type
+  forwardDialog.value.targetFlashNoteId = null
+  forwardDialog.value.targetPeerUserId = null
 }
 async function confirmForward() {
-  const targetId = forwardDialog.value.targetFlashNoteId
-  if (targetId == null) {
-    showError('请选择目标闪记')
+  const fwd = forwardDialog.value
+  const targetFlashNoteId = fwd.targetType === 'flash' ? fwd.targetFlashNoteId : null
+  const targetPeerUserId = fwd.targetType === 'peer' ? fwd.targetPeerUserId : null
+  if (targetFlashNoteId == null && targetPeerUserId == null) {
+    showError(fwd.targetType === 'peer' ? '请选择目标联系人' : '请选择目标闪记')
     return
   }
   forwardDialog.value.busy = true
   try {
     const { successCount, failures } = await chatStore.forwardSelected({
-      targetFlashNoteId: targetId,
+      targetFlashNoteId,
+      targetPeerUserId,
       currentUserId: currentUserId.value
     })
-    forwardDialog.value = { open: false, busy: false, targetFlashNoteId: null }
+    forwardDialog.value = {
+      open: false,
+      busy: false,
+      targetType: 'flash',
+      targetFlashNoteId: null,
+      targetPeerUserId: null
+    }
     if (failures.length === 0) {
       showSuccess(`已转发 ${successCount} 条`)
     } else if (successCount === 0) {
@@ -393,7 +511,15 @@ async function confirmForward() {
     <header class="chat-header">
       <button type="button" class="header-back" @click="goBack" aria-label="返回">←</button>
       <div class="header-title">
-        <span class="header-icon" aria-hidden="true">{{ headerIcon }}</span>
+        <!-- W20: 联系人模式且有头像时使用 AuthenticatedAvatar，其余走 emoji icon -->
+        <AuthenticatedAvatar
+          v-if="isContactRoute && peerAvatar"
+          class="header-avatar"
+          :avatar="peerAvatar"
+          :fallback="(headerTitle || '?').slice(0, 1).toUpperCase()"
+          :size="28"
+        />
+        <span v-else class="header-icon" aria-hidden="true">{{ headerIcon }}</span>
         <span class="header-text">{{ headerTitle }}</span>
       </div>
       <div class="header-actions">
@@ -576,7 +702,7 @@ async function confirmForward() {
       </div>
     </div>
 
-    <!-- D1-W17-03 转发：选择目标闪记 -->
+    <!-- D1-W17-03 / D1-W20-05 转发：选择目标闪记或联系人 -->
     <div v-if="forwardDialog.open" class="modal-overlay" @click.self="cancelForward">
       <div class="modal" role="dialog" aria-label="转发到">
         <header class="modal-header">
@@ -584,11 +710,33 @@ async function confirmForward() {
           <button type="button" class="modal-close" @click="cancelForward">×</button>
         </header>
         <div class="modal-body">
-          <p class="modal-desc">将所选 {{ chatStore.selectedIds.size }} 条消息转发到其他闪记。</p>
-          <ul v-if="forwardableNotes.length" class="forward-list">
+          <p class="modal-desc">将所选 {{ chatStore.selectedIds.size }} 条消息转发到闪记或联系人。</p>
+          <!-- W20-05 目标类型 tab：闪记 / 联系人，二选一 -->
+          <div class="forward-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="forwardDialog.targetType === 'flash' ? 'true' : 'false'"
+              class="forward-tab"
+              :class="{ active: forwardDialog.targetType === 'flash' }"
+              :disabled="forwardDialog.busy"
+              @click="setForwardTab('flash')"
+            >闪记会话</button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="forwardDialog.targetType === 'peer' ? 'true' : 'false'"
+              class="forward-tab"
+              :class="{ active: forwardDialog.targetType === 'peer' }"
+              :disabled="forwardDialog.busy"
+              @click="setForwardTab('peer')"
+            >联系人</button>
+          </div>
+
+          <ul v-if="forwardDialog.targetType === 'flash'" class="forward-list">
             <li
               v-for="n in forwardableNotes"
-              :key="n.id"
+              :key="`fn-${n.id}`"
               class="forward-item"
               :class="{ active: forwardDialog.targetFlashNoteId === n.id }"
               @click="forwardDialog.targetFlashNoteId = n.id"
@@ -596,15 +744,32 @@ async function confirmForward() {
               <span class="forward-icon">{{ n.icon || '⚡' }}</span>
               <span class="forward-title">{{ n.title || '未命名闪记' }}</span>
             </li>
+            <li v-if="forwardableNotes.length === 0" class="empty-text">没有可转发的目标闪记</li>
           </ul>
-          <p v-else class="empty-text">没有可转发的目标闪记</p>
+          <ul v-else class="forward-list">
+            <li
+              v-for="c in forwardableContacts"
+              :key="`peer-${c.userId}`"
+              class="forward-item"
+              :class="{ active: forwardDialog.targetPeerUserId === c.userId }"
+              @click="forwardDialog.targetPeerUserId = c.userId"
+            >
+              <AuthenticatedAvatar
+                :avatar="c.avatar"
+                :fallback="((c.nickname || c.username || '?').slice(0, 1)).toUpperCase()"
+                :size="28"
+              />
+              <span class="forward-title">{{ c.nickname || c.username || `用户 ${c.userId}` }}</span>
+            </li>
+            <li v-if="forwardableContacts.length === 0" class="empty-text">没有可转发的联系人</li>
+          </ul>
         </div>
         <footer class="modal-footer">
           <button type="button" class="btn-secondary" :disabled="forwardDialog.busy" @click="cancelForward">取消</button>
           <button
             type="button"
             class="btn-primary"
-            :disabled="forwardDialog.busy || forwardDialog.targetFlashNoteId == null"
+            :disabled="forwardDialog.busy || (forwardDialog.targetType === 'flash' ? forwardDialog.targetFlashNoteId == null : forwardDialog.targetPeerUserId == null)"
             @click="confirmForward"
           >{{ forwardDialog.busy ? '转发中...' : '转发' }}</button>
         </footer>
@@ -778,6 +943,40 @@ async function confirmForward() {
   text-align: center;
 }
 
+/* W20-05 转发对话框 tab：闪记 / 联系人 */
+.forward-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+.forward-tab {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.forward-tab:hover:not(:disabled):not(.active) {
+  color: var(--color-text-primary);
+}
+.forward-tab.active {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.forward-tab:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .forward-list {
   list-style: none;
   margin: 0;
@@ -858,6 +1057,10 @@ async function confirmForward() {
 }
 .header-icon {
   font-size: 18px;
+}
+/* W20 联系人模式 header 头像：与 header-icon 占位对齐 */
+.header-avatar {
+  flex: none;
 }
 .header-text {
   font-size: 16px;

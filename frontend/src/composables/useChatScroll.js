@@ -22,8 +22,12 @@ const SESSION_KEY_PREFIX = 'tn:chat:scroll:'
 const BOTTOM_THRESHOLD = 80
 const LOAD_MORE_THRESHOLD = 80
 
-function sessionKey(flashNoteId) {
-  return `${SESSION_KEY_PREFIX}${flashNoteId}`
+// D1-W20-04 conversationKey 按模式隔离：
+//   - 闪记会话：`fn:7` / `fn:-1`（收集箱）
+//   - 联系人 1v1：`peer:42`
+// sessionStorage key 直接拼接该字符串，flash / peer 互不侵蚀
+function sessionKey(conversationKey) {
+  return `${SESSION_KEY_PREFIX}${conversationKey}`
 }
 
 function bottomKeyOf(arr) {
@@ -35,8 +39,11 @@ function bottomKeyOf(arr) {
   return `idx:${arr.length - 1}`
 }
 
+// D1-W20-04 构造参数 flashNoteId 重命名为 conversationKey（可以是任意字符串或 ref/getter）。
+// 同时保留 flashNoteId 别名参数作为向后兼容（旧调用传数字仍能工作，会被堆叠转成字符串作为 key）。
 export function useChatScroll({
-  flashNoteId,
+  conversationKey,
+  flashNoteId, // 兼容：仅当 conversationKey 未传时起作用
   messages,
   shouldLoadMore = () => false,
   onLoadMore = null,
@@ -50,6 +57,9 @@ export function useChatScroll({
   let lastLength = 0
   let lastBottomKey = null
 
+  // 最终使用的身份源：优先 conversationKey，没传则退回到 flashNoteId
+  const keySource = conversationKey != null ? conversationKey : flashNoteId
+
   function getMessages() {
     if (!messages) return []
     if (typeof messages === 'function') return messages() || []
@@ -57,11 +67,11 @@ export function useChatScroll({
     return messages
   }
 
-  function getFlashNoteId() {
-    if (flashNoteId == null) return null
-    if (typeof flashNoteId === 'function') return flashNoteId()
-    if (flashNoteId && 'value' in flashNoteId) return flashNoteId.value
-    return flashNoteId
+  function getConversationKey() {
+    if (keySource == null) return null
+    if (typeof keySource === 'function') return keySource()
+    if (keySource && typeof keySource === 'object' && 'value' in keySource) return keySource.value
+    return keySource
   }
 
   function distanceToBottom() {
@@ -148,10 +158,10 @@ export function useChatScroll({
     }
   )
 
-  // 进入会话切换时（flashNoteId 变化），重置内部状态。
+  // 进入会话切换时（conversationKey 变化），重置内部状态。
   // 调用方需要在 store.openConversation 完成 + nextTick 后再调用 restoreScrollOrBottom。
   watch(
-    () => getFlashNoteId(),
+    () => getConversationKey(),
     () => {
       lastLength = 0
       lastBottomKey = null
@@ -163,11 +173,11 @@ export function useChatScroll({
   function rememberScroll() {
     if (typeof sessionStorage === 'undefined') return
     const el = scrollerRef.value
-    const fid = getFlashNoteId()
-    if (!el || fid == null) return
+    const key = getConversationKey()
+    if (!el || key == null) return
     try {
       sessionStorage.setItem(
-        sessionKey(fid),
+        sessionKey(key),
         JSON.stringify({
           scrollTop: el.scrollTop,
           scrollHeight: el.scrollHeight,
@@ -183,10 +193,10 @@ export function useChatScroll({
 
   function readRemembered() {
     if (typeof sessionStorage === 'undefined') return null
-    const fid = getFlashNoteId()
-    if (fid == null) return null
+    const key = getConversationKey()
+    if (key == null) return null
     try {
-      const raw = sessionStorage.getItem(sessionKey(fid))
+      const raw = sessionStorage.getItem(sessionKey(key))
       if (!raw) return null
       const parsed = JSON.parse(raw)
       if (!parsed || typeof parsed !== 'object') return null
@@ -220,10 +230,10 @@ export function useChatScroll({
 
   function clearRemembered() {
     if (typeof sessionStorage === 'undefined') return
-    const fid = getFlashNoteId()
-    if (fid == null) return
+    const key = getConversationKey()
+    if (key == null) return
     try {
-      sessionStorage.removeItem(sessionKey(fid))
+      sessionStorage.removeItem(sessionKey(key))
     } catch (_e) {
       // ignore
     }

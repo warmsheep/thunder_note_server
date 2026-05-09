@@ -6,20 +6,28 @@ import apiClient from './client'
 // - send 直接 POST 到 /api/messages，body 字段最小化（service 层会用 Authentication 填 senderId）
 // - 收集箱使用 flashNoteId=-1（与 W5-02 的 inbox=true 字段对应同一虚拟会话）
 
-export function listMessages({ flashNoteId, page = 1, limit = 30, peerUserId } = {}) {
-  if (flashNoteId == null) {
-    return Promise.reject(new Error('flashNoteId is required'))
+// D1-W20-03 改造：支持 flashNoteId 与 peerUserId 二选一
+//   - flashNoteId 模式：拉取指定闪记会话的消息（含收集箱 -1）
+//   - peerUserId 模式：拉取与某联系人 1v1 对话的消息
+export function listMessages({ flashNoteId = null, peerUserId = null, page = 1, limit = 30 } = {}) {
+  if (flashNoteId == null && peerUserId == null) {
+    return Promise.reject(new Error('flashNoteId or peerUserId is required'))
   }
   return apiClient.post('/api/messages/list', {
     flashNoteId,
-    peerUserId: peerUserId || null,
+    peerUserId,
     page,
     limit
   })
 }
 
+// D1-W20-03 改造：支持 flashNoteId 与 receiverId 二选一
+//   - flashNoteId 模式：发到指定闪记会话（含收集箱 -1）
+//   - receiverId 模式：1v1 联系人对话（与 receiverId 用户的对话）
+//   - 二者必须二选一，否则 reject
 export function sendMessage({
-  flashNoteId,
+  flashNoteId = null,
+  receiverId = null,
   content,
   clientRequestId,
   role = 'user',
@@ -30,14 +38,18 @@ export function sendMessage({
   mediaDuration = null,
   thumbnailUrl = null
 } = {}) {
-  if (flashNoteId == null) {
-    return Promise.reject(new Error('flashNoteId is required'))
+  if (flashNoteId == null && receiverId == null) {
+    return Promise.reject(new Error('flashNoteId or receiverId is required'))
   }
   const body = {
-    flashNoteId,
     content: content == null ? '' : String(content),
     clientRequestId: clientRequestId || null,
     role
+  }
+  if (flashNoteId != null) {
+    body.flashNoteId = flashNoteId
+  } else {
+    body.receiverId = receiverId
   }
   // 仅在有媒体时附带媒体字段，避免对纯文本消息引入冗余 null
   if (mediaType) {

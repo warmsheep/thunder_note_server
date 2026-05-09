@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
 import LoadingState from '../components/LoadingState.vue'
@@ -16,8 +17,16 @@ import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
 // - 好友请求列表：accept/reject
 // - 顶部"添加好友"按钮 → 搜索弹窗 → 发起请求
 
+const router = useRouter()
 const store = useContactsStore()
 const { showSuccess, showError } = useToast()
+
+// D1-W20-02 开始聊天：仅对 FRIEND 状态启用；点击 → 跳到联系人 1v1 会话路由
+function openContactChat(contact) {
+  if (!contact || contact.userId == null) return
+  if (contact.relationStatus !== 'FRIEND') return
+  router.push({ name: 'contact-chat', params: { peerUserId: String(contact.userId) } })
+}
 
 const activeTab = ref('contacts') // contacts | requests
 const showSearch = ref(false)
@@ -231,12 +240,22 @@ function nameOf(o) {
               </span>
             </p>
           </div>
-          <button
-            type="button"
-            class="btn-danger-outline"
-            :disabled="store.submitting"
-            @click="askRemoveContact(c)"
-          >{{ c.relationStatus === 'PENDING_SENT' ? '撤销请求' : '删除' }}</button>
+          <div class="row-actions">
+            <button
+              v-if="c.relationStatus === 'FRIEND'"
+              type="button"
+              class="btn-primary-outline"
+              :disabled="store.submitting"
+              :title="`与 ${nameOf(c)} 聊天`"
+              @click="openContactChat(c)"
+            >💬 聊天</button>
+            <button
+              type="button"
+              class="btn-danger-outline"
+              :disabled="store.submitting"
+              @click="askRemoveContact(c)"
+            >{{ c.relationStatus === 'PENDING_SENT' ? '撤销请求' : '删除' }}</button>
+          </div>
         </article>
       </section>
 
@@ -483,6 +502,30 @@ function nameOf(o) {
   color: var(--color-primary);
 }
 .btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* W20-02 联系人卡片右侧操作组：聊天 + 删除 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.btn-primary-outline {
+  padding: 6px 12px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-primary-outline:hover:not(:disabled) {
+  background: var(--color-primary-light, rgba(46, 125, 50, 0.08));
+}
+.btn-primary-outline:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

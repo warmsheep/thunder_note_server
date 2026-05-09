@@ -222,6 +222,60 @@ describe('useChatScroll', () => {
     expect(result.isAtBottom.value).toBe(true)
     unmount()
   })
+
+  // D1-W20-04 conversationKey 按模式隔离
+  describe('conversationKey (D1-W20)', () => {
+    it('显式传 conversationKey 时，sessionStorage key 是该字符串', () => {
+      const { result, unmount } = runInComponent(() =>
+        useChatScroll({
+          conversationKey: ref('peer:42'),
+          messages: ref([]),
+          shouldLoadMore: () => false,
+          onLoadMore: null
+        })
+      )
+      const scroller = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 200 })
+      result.scrollerRef.value = scroller
+      result.rememberScroll()
+      expect(sessionStorage.getItem('tn:chat:scroll:peer:42')).not.toBeNull()
+      // 不会污染 fn 命名空间
+      expect(sessionStorage.getItem('tn:chat:scroll:fn:42')).toBeNull()
+      result.clearRemembered()
+      expect(sessionStorage.getItem('tn:chat:scroll:peer:42')).toBeNull()
+      unmount()
+    })
+
+    it('flash 与 peer 用相同数字 ID 不会互相污染', () => {
+      // 实例 A：闪记会话 fn:7
+      const { result: rA, unmount: uA } = runInComponent(() =>
+        useChatScroll({
+          conversationKey: ref('fn:7'),
+          messages: ref([]),
+          shouldLoadMore: () => false
+        })
+      )
+      rA.scrollerRef.value = makeScroller({ scrollHeight: 1000, clientHeight: 400, scrollTop: 200 })
+      rA.rememberScroll()
+      uA()
+
+      // 实例 B：联系人 1v1 peer:7（同一数字 ID 但不同模式）
+      const { result: rB, unmount: uB } = runInComponent(() =>
+        useChatScroll({
+          conversationKey: ref('peer:7'),
+          messages: ref([{ id: 1 }]),
+          shouldLoadMore: () => false
+        })
+      )
+      const scrollerB = makeScroller({ scrollHeight: 1500, clientHeight: 400, scrollTop: 0 })
+      rB.scrollerRef.value = scrollerB
+      // restoreScrollOrBottom 在 peer:7 下应当走 "没有记录 → 滚到底"，
+      // 而不是误读 fn:7 的位置
+      return rB.restoreScrollOrBottom().then(() => {
+        expect(scrollerB.scrollTop).toBe(1500) // 滚到底
+        uB()
+      })
+    })
+  })
 })
 
 // happy-dom 默认就支持 sessionStorage，不需要额外 setup。
