@@ -179,16 +179,22 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* D1-W28-08 微信 / 安卓风格语音条：
+   - 容器透明，直接继承父气泡颜色（mine 绿 / other 浅灰），不再叠加 background/border 黑框
+   - 按钮 / 进度条 / 时长全部用 currentColor + 半透明，无论气泡是哪种底色都清晰
+   - 总体形态：[▶按钮 圆形] [横向进度条/波形] [时长]，与 Android `item_chat_message.xml`
+     `voiceContainer` / `rightVoiceContainer` 结构一致 */
 .voice-player {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-divider);
-  border-radius: 999px;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   max-width: 100%;
   box-sizing: border-box;
+  color: inherit;
 }
 .vp-play-btn {
   flex-shrink: 0;
@@ -196,7 +202,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: var(--color-primary);
+  background: rgba(0, 0, 0, 0.55);
   color: #ffffff;
   font-size: 12px;
   line-height: 1;
@@ -205,9 +211,10 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  transition: background 0.15s, transform 0.05s;
 }
 .vp-play-btn:hover {
-  background: var(--color-primary-dark);
+  background: rgba(0, 0, 0, 0.75);
 }
 .vp-play-btn:active {
   transform: scale(0.96);
@@ -216,13 +223,13 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 4px;
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.18);
   position: relative;
   cursor: pointer;
   touch-action: none;
 }
-.vp-track:focus {
-  outline: 2px solid var(--color-primary);
+.vp-track:focus-visible {
+  outline: 2px solid currentColor;
   outline-offset: 2px;
 }
 .vp-track-fill {
@@ -230,14 +237,15 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 0;
   height: 100%;
-  background: var(--color-primary);
+  background: rgba(0, 0, 0, 0.55);
   border-radius: 2px;
   pointer-events: none;
 }
 .vp-time {
   flex-shrink: 0;
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: inherit;
+  opacity: 0.7;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   min-width: 32px;

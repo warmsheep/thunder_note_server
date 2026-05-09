@@ -322,20 +322,10 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
         </div>
       </section>
 
+      <!-- D1-W28-08「联系人 / 好友请求」入口去重：底部 tab 已有「联系人」独立入口，
+           「我的」页不再重复展示。整个「入口」section 仅剩「⚙ 设置」时直接渲染设置入口卡片。 -->
       <section class="card">
-        <header class="card-header simple">
-          <h2 class="card-title">入口</h2>
-        </header>
         <ul class="kv-list">
-          <li class="link-row" @click="$router.push('/contacts')">
-            <span class="kv-label">联系人 / 好友请求</span>
-            <span class="kv-value">
-              <span v-if="contactsStore.pendingCount > 0" class="badge">{{ contactsStore.pendingCount }}</span>
-              <span class="chevron">›</span>
-            </span>
-          </li>
-          <!-- D1-W28-01 「修改密码」入口去重：与 SettingsView 「通用 / 修改密码」重复，
-               信息架构按「我的 → 设置 → 修改密码」收敛，这里只保留「设置」入口。 -->
           <li class="link-row" @click="$router.push({ name: 'settings' })">
             <span class="kv-label">⚙ 设置</span>
             <span class="kv-value">

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { fetchAsObjectUrl, fetchAsText, triggerDownload } from '../api/files'
+import { fetchAsObjectUrl, fetchAsText } from '../api/files'
 import {
   isImage, isVideo, isAudio, isVoice, isPdf, isTextLike, isOfficeDoc,
   formatFileSize, shortenFileName
@@ -29,7 +29,6 @@ const { showError } = useToast()
 const blobUrl = ref(null) // image / video / audio 主 blob
 const loading = ref(false)
 const failed = ref(false)
-const downloading = ref(false)
 
 const m = computed(() => props.message || {})
 const objectName = computed(() => m.value.mediaUrl || null)
@@ -201,25 +200,39 @@ async function openTextPreview() {
     textLoading.value = false
   }
 }
+// D1-W28-08 文件气泡整体点击预览：仅 PDF / 纯文本可触发；
+// office / 未识别类型沉默不响应，由 hint 文本告知用户走右键下载。
+const isClickablePreview = computed(
+  () => previewKind.value === 'file' && (isPdfFile.value || isTextFile.value)
+)
+const filePreviewLoading = computed(() => {
+  if (isPdfFile.value) return pdfLoading.value
+  if (isTextFile.value) return textLoading.value
+  return false
+})
+const filePreviewTitle = computed(() => {
+  if (isPdfFile.value) return '点击预览 PDF（下载请右键消息）'
+  if (isTextFile.value) return '点击预览文本（下载请右键消息）'
+  if (isOfficeFile.value) return '暂不支持在线预览，请右键消息选择「下载」'
+  return ''
+})
+function onFileBubbleClick() {
+  if (!isClickablePreview.value) return
+  if (filePreviewLoading.value) return
+  if (isPdfFile.value) {
+    openPdfPreview()
+  } else if (isTextFile.value) {
+    openTextPreview()
+  }
+}
+
 function closeTextPreview() {
   textDialogOpen.value = false
 }
 
-// === 下载 ===
-async function handleDownload() {
-  if (!objectName.value) {
-    showError('文件信息缺失')
-    return
-  }
-  downloading.value = true
-  try {
-    await triggerDownload(objectName.value, fileName.value)
-  } catch (e) {
-    showError(e?.serverMessage || e?.message || '下载失败')
-  } finally {
-    downloading.value = false
-  }
-}
+// D1-W28-08 内嵌下载入口已删除：下载统一收到 MessageBubble 右键菜单（消息层级），
+// FavoritesView 在自己的右键菜单里处理收藏项的下载，二者都直接调用 `api/files#triggerDownload`，
+// 不再走 MediaPreview 内部按钮。
 
 // === dispose ===
 function disposeBlob() {
@@ -317,36 +330,28 @@ watch(
       <div v-else class="media-stub failed">{{ isVoiceMessage ? '语音加载失败' : '音频加载失败' }} · {{ fileName }}</div>
     </template>
 
-    <div v-else class="media-file">
+    <!-- D1-W28-08 文件气泡可整体点击预览：PDF / 文本走对应 dialog；
+         office / 其他不可预览类型保持 disabled 视觉，只展示文件名 + hint。
+         下载入口已统一收到 MessageBubble 右键菜单（D1-W21），这里不再放显式按钮。 -->
+    <div
+      v-else
+      class="media-file"
+      :class="{ 'is-clickable': isClickablePreview, 'is-loading': filePreviewLoading }"
+      :title="filePreviewTitle"
+      :role="isClickablePreview ? 'button' : null"
+      :tabindex="isClickablePreview ? 0 : null"
+      @click="onFileBubbleClick"
+      @keydown.enter.prevent="onFileBubbleClick"
+      @keydown.space.prevent="onFileBubbleClick"
+    >
       <span class="file-icon" aria-hidden="true">{{ fileIcon }}</span>
       <div class="file-meta">
         <p class="file-name">{{ shortenFileName(fileName, 36) }}</p>
         <p v-if="fileSize" class="file-size">{{ formatFileSize(fileSize) }}</p>
-        <p v-if="isOfficeFile" class="file-hint">暂不支持在线预览，请下载后查看</p>
+        <p v-if="isOfficeFile" class="file-hint">暂不支持在线预览，可右键「下载」后查看</p>
+        <p v-else-if="filePreviewLoading" class="file-hint">加载中...</p>
+        <p v-else-if="isClickablePreview" class="file-hint">点击预览，右键「下载」保存到本地</p>
       </div>
-    </div>
-
-    <div v-if="!isLocalBlob" class="media-actions">
-      <button
-        v-if="previewKind === 'file' && isPdfFile"
-        type="button"
-        class="download-btn preview-btn"
-        :disabled="pdfLoading"
-        @click="openPdfPreview"
-      >{{ pdfLoading ? '加载中...' : '预览' }}</button>
-      <button
-        v-else-if="previewKind === 'file' && isTextFile"
-        type="button"
-        class="download-btn preview-btn"
-        :disabled="textLoading"
-        @click="openTextPreview"
-      >{{ textLoading ? '加载中...' : '预览' }}</button>
-      <button
-        type="button"
-        class="download-btn"
-        :disabled="downloading"
-        @click="handleDownload"
-      >{{ downloading ? '下载中...' : '下载' }}</button>
     </div>
 
     <!-- D1-W18-01 图片全屏预览 -->
@@ -454,6 +459,23 @@ watch(
   border-radius: var(--radius-sm);
   min-width: 200px;
   max-width: 320px;
+  /* 默认非可点击（office / unknown）：保持 default 光标，避免误导 */
+}
+/* D1-W28-08 PDF / 纯文本：整块可点击预览 */
+.media-file.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.media-file.is-clickable:hover {
+  border-color: var(--color-primary);
+}
+.media-file.is-clickable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.media-file.is-loading {
+  cursor: progress;
+  opacity: 0.7;
 }
 .file-icon {
   font-size: 24px;
@@ -480,30 +502,6 @@ watch(
   font-style: italic;
 }
 
-.media-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.download-btn {
-  padding: 4px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-.download-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-.download-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.preview-btn {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
+/* D1-W28-08 .media-actions / .download-btn / .preview-btn 已删除：
+   下载与预览入口分别迁到右键菜单与文件气泡整体点击。 */
 </style>

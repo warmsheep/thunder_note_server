@@ -99,9 +99,11 @@ const menuItems = computed(() => {
       icon: props.favorited ? '★' : '☆'
     },
     {
+      // D1-W28-08 「保存到本地」与「下载」语义完全重复，统一为「下载」（与右上角选项、
+      // FavoritesView 菜单、Android 端 R.string.action_download 保持一致）
       key: 'download',
-      label: '保存到本地',
-      icon: '💾',
+      label: '下载',
+      icon: '⬇',
       disabled: !isMedia.value || !m.value.mediaUrl
     },
     { key: 'select', label: '多选', icon: '☑' },

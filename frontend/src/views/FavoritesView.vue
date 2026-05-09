@@ -131,9 +131,10 @@ const menuItems = computed(() => {
   return [
     { key: 'copy', label: '复制', icon: '📋' },
     {
+      // D1-W28-08 与 MessageBubble 统一为「下载」；语义完全重复，避免 UI 文案双重表述
       key: 'download',
-      label: '保存到本地',
-      icon: '💾',
+      label: '下载',
+      icon: '⬇',
       disabled: !isMediaItem(menuTarget.value) || !menuTarget.value.mediaUrl
     },
     { key: 'remove', label: '取消收藏', icon: '☆', danger: true }
