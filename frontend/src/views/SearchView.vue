@@ -36,9 +36,10 @@ async function doSearch() {
   }
 }
 
-function handleEnter(e) {
-  if (e.shiftKey) return
-  e.preventDefault()
+// W12-03 改造：把 keydown.enter 改为 form @submit.prevent，浏览器默认就支持
+// "聚焦输入框 + Enter" 提交，更标准、对辅助技术更友好。
+function handleSubmit() {
+  if (!inputValue.value || !inputValue.value.trim()) return
   doSearch()
 }
 
@@ -68,29 +69,31 @@ const showInitialHint = computed(() => !store.hasSearched && !store.loading && !
 
 <template>
   <div class="search-page">
-    <div class="search-bar">
+    <form class="search-bar" role="search" @submit.prevent="handleSubmit">
+      <label for="search-input" class="sr-only">搜索关键词</label>
       <input
+        id="search-input"
         ref="inputEl"
         v-model="inputValue"
-        type="text"
+        type="search"
         class="search-input"
         placeholder="搜索闪记名称或消息内容"
-        @keydown.enter="handleEnter"
+        autocomplete="off"
       />
       <button
         v-if="inputValue"
         type="button"
         class="search-clear"
+        aria-label="清空搜索"
         title="清空"
         @click="clearInput"
       >×</button>
       <button
-        type="button"
+        type="submit"
         class="search-btn"
         :disabled="store.loading || !inputValue.trim()"
-        @click="doSearch"
       >{{ store.loading ? '搜索中...' : '搜索' }}</button>
-    </div>
+    </form>
 
     <p v-if="store.activeQuery && !store.loading && !store.error" class="search-summary">
       关键词「{{ store.activeQuery }}」 · 共 {{ store.totalHits }} 条结果

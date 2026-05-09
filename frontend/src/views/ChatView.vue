@@ -941,4 +941,22 @@ async function confirmForward() {
   color: var(--color-text-hint);
   padding: 8px 0;
 }
+
+/* W12-01 桌面超宽屏聊天体验：消息区两侧 padding 自动扩大，
+   把消息列宽视觉收窄到 var(--chat-max-width) 居中，
+   避免在 4K 屏上一行气泡跨度过大；header / composer 保持全宽以贴合页面框架。
+   max() 兜底，确保窄屏时不会出现负 padding。 */
+@media (min-width: 1280px) {
+  .chat-scroll {
+    padding-left: max(16px, calc((100% - var(--chat-max-width)) / 2));
+    padding-right: max(16px, calc((100% - var(--chat-max-width)) / 2));
+  }
+}
+
+/* W12-02 移动端 ≤480px 收紧聊天 header 与 padding */
+@media (max-width: 480px) {
+  .chat-scroll {
+    padding: 12px;
+  }
+}
 </style>

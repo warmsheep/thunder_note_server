@@ -1,4 +1,11 @@
-/* D1-W4 起从 docs/页面设计规范.md 引入主题变量；W12 视觉系统专项时再细化 */
+/* D1-W4 起从 docs/页面设计规范.md 引入主题变量。
+ * D1-W12 在此基础上加固：
+ *   - 扩展 token（focus-ring / container max width / 断点）
+ *   - 加全局 :focus-visible 焦点环（覆盖各 view scoped 样式里 outline:none 的元素，
+ *     键盘用户始终能看到焦点；鼠标点击不显示，避免视觉噪声）
+ *   - 加 input / textarea / select / button 的基础 reset 与 disabled 状态
+ *   - 加 placeholder / selection 颜色
+ */
 :root {
   color-scheme: light;
 
@@ -38,6 +45,24 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
+
+  /* W12-03 a11y 焦点环颜色（用主色 + alpha，覆盖在浅/深背景上都清晰） */
+  --color-focus-ring: rgba(7, 193, 96, 0.45);
+  --focus-ring: 0 0 0 3px var(--color-focus-ring);
+
+  /* W12-04 阅读最大宽度。后续每个 view 用容器 wrapper 自己引用（不强制全局生效） */
+  --container-max-md: 960px;
+  --container-max-lg: 1180px;
+  --chat-max-width: 980px;
+
+  /* 文本选中色 */
+  --color-selection: rgba(7, 193, 96, 0.18);
+
+  /* 断点（CSS variables 不能直接用于 @media，这里仅做文档化 / JS 取值用） */
+  --bp-mobile: 480px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+  --bp-wide: 1280px;
 }
 
 * {
@@ -52,7 +77,13 @@ body,
   background: var(--color-bg);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   min-height: 100vh;
+  /* iOS 防止字号自动放大 */
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
@@ -65,4 +96,87 @@ a:hover {
 
 button {
   font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* W12-03 全局焦点环：使用 :focus-visible 让键盘 focus 永远可见，
+ * 鼠标点击不触发（避免视觉噪声）。
+ * 这里同时覆盖各 view scoped 样式里 `outline: none` 的元素 ——
+ *   :focus-visible 优先级高于 :focus，且会再次显式声明 outline，
+ *   所以即便 view 写了 .input:focus { outline: none }，键盘 focus 时仍有环。
+ */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid transparent; /* 兼容老浏览器 */
+  box-shadow: var(--focus-ring);
+}
+/* 表单类元素的 :focus-visible 用 box-shadow 表达，避免 outline 在圆角上不贴合 */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+[tabindex]:not([tabindex='-1']):focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 文本选中颜色 */
+::selection {
+  background: var(--color-selection);
+  color: var(--color-text-primary);
+}
+
+/* 占位符颜色统一 */
+::placeholder {
+  color: var(--color-text-hint);
+  opacity: 1;
+}
+
+/* W12-04 通用阅读容器：view 可以选择性地把内容包在 .container 中获得居中限宽 */
+.container {
+  width: 100%;
+  max-width: var(--container-max-md);
+  margin-left: auto;
+  margin-right: auto;
+}
+.container-lg {
+  max-width: var(--container-max-lg);
+}
+
+/* W12-02 移动端：tap 高亮去掉，避免点击时灰色块闪烁 */
+@media (max-width: 768px) {
+  a,
+  button,
+  [role='button'] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* W12-04 sr-only：仅屏幕阅读器可见的文本（W12 主要用作 aria 描述） */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

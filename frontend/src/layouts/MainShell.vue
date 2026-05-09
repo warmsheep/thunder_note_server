@@ -328,16 +328,42 @@ async function handleLogout() {
   overflow-y: auto;
 }
 
+/* W12-01 桌面超宽屏：MainShell 包裹的列表/合集/收藏/搜索/资料/联系人/改密页面
+   居中限宽，避免在 4K 屏上一行字横跨太宽。
+   注：ChatView 是独立路由（/chat/:flashNoteId），不在 MainShell 内，
+   它的限宽由 ChatView 自身处理，不会被这里影响。 */
+@media (min-width: 1280px) {
+  .content {
+    padding: 28px 40px;
+  }
+  .content > * {
+    max-width: var(--container-max-lg);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* W12-01 大屏 sidebar 加宽，提供更舒适的视觉间距 */
+@media (min-width: 1440px) {
+  .shell {
+    grid-template-columns: 248px 1fr;
+  }
+}
+
 .bottombar {
   display: none;
 }
 
+/* W12-02 移动端 ≤768px */
 @media (max-width: 768px) {
   .shell {
     grid-template-columns: 1fr;
   }
   .sidebar {
     display: none;
+  }
+  .topbar {
+    padding: 12px 16px;
   }
   .content {
     padding: 16px;
@@ -371,6 +397,31 @@ async function handleLogout() {
   }
   .bottom-icon {
     font-size: 20px;
+  }
+
+  /* 移动端 user-name 在 topbar 太挤，隐藏，仅显示头像 */
+  .user-name {
+    display: none;
+  }
+}
+
+/* W12-02 极小屏 ≤480px */
+@media (max-width: 480px) {
+  .topbar {
+    padding: 10px 12px;
+  }
+  .topbar-title {
+    font-size: 15px;
+  }
+  .content {
+    padding: 12px;
+    padding-bottom: 84px;
+  }
+  .bottom-link {
+    font-size: 10px;
+  }
+  .bottom-icon {
+    font-size: 18px;
   }
 }
 </style>
