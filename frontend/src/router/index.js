@@ -71,6 +71,19 @@ const router = createRouter({
           name: 'change-password',
           component: () => import('../views/ChangePasswordView.vue'),
           meta: { requiresAuth: true }
+        },
+        // D1-W23-03 / D1-W23-04 独立设置页（MainShell 下的嵌套路由）
+        {
+          path: 'settings',
+          name: 'settings',
+          component: () => import('../views/SettingsView.vue'),
+          meta: { requiresAuth: true }
+        },
+        {
+          path: 'settings/about',
+          name: 'settings-about',
+          component: () => import('../views/AboutView.vue'),
+          meta: { requiresAuth: true }
         }
       ]
     },

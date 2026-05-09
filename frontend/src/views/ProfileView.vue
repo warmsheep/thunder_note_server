@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useProfileStore } from '../stores/profile'
 import { useContactsStore } from '../stores/contacts'
+import { useFlashNotesStore } from '../stores/flashNotes'
+import { useFavoritesStore } from '../stores/favorites'
 import { useToast } from '../composables/useToast'
 import { uploadFile } from '../api/files'
 import { countMessages } from '../api/messages'
@@ -11,6 +13,8 @@ import { buildAvatarUrl } from '../utils/avatarHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
+import AvatarPickerDialog from '../components/AvatarPickerDialog.vue'
+import AvatarCropDialog from '../components/AvatarCropDialog.vue'
 
 // D1-W11 个人资料与设置
 // - W11-01 进页拉一次 POST /api/users/profile
@@ -22,11 +26,16 @@ const router = useRouter()
 const authStore = useAuthStore()
 const profileStore = useProfileStore()
 const contactsStore = useContactsStore()
+const flashNotesStore = useFlashNotesStore()
+const favoritesStore = useFavoritesStore()
 const { showSuccess, showError } = useToast()
 
-const avatarInputEl = ref(null)
 const avatarUploading = ref(false)
 const avatarProgress = ref(0)
+
+// D1-W23-01 / W23-02 头像选择 + 裁剪
+const pickerDialog = ref({ open: false })
+const cropDialog = ref({ open: false, source: null })
 
 const editing = ref(false)
 const editForm = ref({ nickname: '', bio: '' })
@@ -50,21 +59,18 @@ const BIO_MAX = 200
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024 // 5 MB
 
 const user = computed(() => authStore.user || {})
-const profile = computed(() => profileStore.profile || {})
+// profile / apiBase / clientVersion 已迁到独立 /settings 页
 const fallbackChar = computed(() => (profileStore.nickname || user.value.username || '?').slice(0, 1).toUpperCase())
-
-const apiBase = computed(() => {
-  // 在浏览器环境下，apiClient 用相对路径；展示时使用当前 origin 让用户看到完整地址
-  if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin
-  }
-  return '(unknown)'
-})
-
-const clientVersion = import.meta.env?.VITE_APP_VERSION || 'd1.6-dev'
 
 const isLoadingFirst = computed(() => profileStore.loading && !profileStore.loaded)
 const showError_ = computed(() => Boolean(profileStore.error) && !profileStore.loaded)
+
+// D1-W23-05 统计扩充：闪记数 / 消息总数 / 收藏数
+// 闪记数→ flashNotesStore.visibleCount（不含收集箱、不含隐藏）
+// 收藏数 → favoritesStore.list.length（用户所有收藏的消息）
+// 文件数 后端未提供独立 count 接口，暂不显示
+const flashNoteCount = computed(() => flashNotesStore.loaded ? flashNotesStore.visibleCount : null)
+const favoriteCount = computed(() => favoritesStore.loaded ? favoritesStore.list.length : null)
 
 onMounted(async () => {
   if (!profileStore.loaded) {
@@ -76,6 +82,9 @@ onMounted(async () => {
   }
   // D1-W16-02 消息总数静默拉取，与 profile 加载并行
   loadMessageCount()
+  // D1-W23-05 闪记与收藏统计静默拉取
+  if (!flashNotesStore.loaded) flashNotesStore.fetchList({ silent: true }).catch(() => {})
+  if (!favoritesStore.loaded) favoritesStore.fetchList().catch(() => {})
 })
 
 function startEdit() {
@@ -125,26 +134,49 @@ async function saveEdit() {
   }
 }
 
+// D1-W23-01 打开头像选择对话框
 function pickAvatar() {
-  avatarInputEl.value?.click()
+  pickerDialog.value = { open: true }
 }
 
-async function onAvatarChange(e) {
-  const f = e.target.files && e.target.files[0]
-  if (avatarInputEl.value) avatarInputEl.value.value = ''
-  if (!f) return
-  if (!f.type || !f.type.startsWith('image/')) {
+// D1-W23-01 在 picker 里选中 emoji → 直接写入
+async function onPickEmoji(emoji) {
+  if (!emoji) return
+  try {
+    await profileStore.saveAvatar(emoji)
+    authStore.patchUser({ avatar: emoji })
+    showSuccess('头像已更新')
+    pickerDialog.value = { open: false }
+  } catch (err) {
+    showError(err?.serverMessage || err?.message || '头像更新失败')
+  }
+}
+
+// D1-W23-02 在 picker 里选择本地图片 → 弹裁剪对话框
+function onPickImage(file) {
+  if (!file) return
+  if (!file.type || !file.type.startsWith('image/')) {
     showError('请选择图片文件')
     return
   }
-  if (f.size > AVATAR_MAX_BYTES) {
+  if (file.size > AVATAR_MAX_BYTES) {
     showError(`图片大小不能超过 ${AVATAR_MAX_BYTES / 1024 / 1024} MB`)
     return
   }
+  pickerDialog.value = { open: false }
+  cropDialog.value = { open: true, source: file }
+}
+
+// D1-W23-02 裁剪确认 → 上传 blob + PUT /api/users/avatar
+async function onCropConfirm(blob) {
+  if (!blob) return
   avatarUploading.value = true
   avatarProgress.value = 0
   try {
-    const result = await uploadFile(f, {
+    // 转化成带文件名的 File 再上传，便于后端通过 contentType 判断
+    const fileName = `avatar-${Date.now()}.jpg`
+    const file = new File([blob], fileName, { type: 'image/jpeg' })
+    const result = await uploadFile(file, {
       onUploadProgress: (ev) => {
         if (ev && ev.total > 0) avatarProgress.value = ev.loaded / ev.total
       }
@@ -162,7 +194,14 @@ async function onAvatarChange(e) {
   } finally {
     avatarUploading.value = false
     avatarProgress.value = 0
+    cropDialog.value = { open: false, source: null }
   }
+}
+
+function onCropCancel() {
+  cropDialog.value = { open: false, source: null }
+  // 取消裁剪后重新打开 picker，避免需要再点一次「更换头像」
+  pickerDialog.value = { open: true }
 }
 
 async function handleLogout() {
@@ -204,13 +243,6 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
               :disabled="avatarUploading"
               @click="pickAvatar"
             >{{ avatarUploading ? `${avatarPercent}%` : '更换头像' }}</button>
-            <input
-              ref="avatarInputEl"
-              type="file"
-              accept="image/*"
-              class="hidden-input"
-              @change="onAvatarChange"
-            />
           </div>
           <div class="meta">
             <p class="name">{{ profileStore.nickname || user.username || '未设置昵称' }}</p>
@@ -269,6 +301,27 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
         </div>
       </section>
 
+      <!-- D1-W23-05 统计卡片 -->
+      <section class="card stats-card">
+        <header class="card-header simple">
+          <h2 class="card-title">统计</h2>
+        </header>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-value">{{ flashNoteCount == null ? '-' : flashNoteCount }}</span>
+            <span class="stat-label">闪记</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">{{ messageCount == null ? '-' : messageCount }}</span>
+            <span class="stat-label">消息</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">{{ favoriteCount == null ? '-' : favoriteCount }}</span>
+            <span class="stat-label">收藏</span>
+          </div>
+        </div>
+      </section>
+
       <section class="card">
         <header class="card-header simple">
           <h2 class="card-title">入口</h2>
@@ -287,36 +340,39 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
               <span class="chevron">›</span>
             </span>
           </li>
+          <li class="link-row" @click="$router.push({ name: 'settings' })">
+            <span class="kv-label">⚙ 设置</span>
+            <span class="kv-value">
+              <span class="chevron">›</span>
+            </span>
+          </li>
         </ul>
       </section>
 
+      <!-- 系统信息与退出已迁到独立设置页（/settings）；这里保留一个轻量的退出入口。 -->
       <section class="card">
-        <header class="card-header simple">
-          <h2 class="card-title">设置 / 系统信息</h2>
-        </header>
-        <ul class="kv-list">
-          <li>
-            <span class="kv-label">服务地址</span>
-            <span class="kv-value mono">{{ apiBase }}</span>
-          </li>
-          <li>
-            <span class="kv-label">客户端版本</span>
-            <span class="kv-value mono">{{ clientVersion }}</span>
-          </li>
-          <li>
-            <span class="kv-label">当前用户 ID</span>
-            <span class="kv-value mono">{{ user.id ?? '-' }}</span>
-          </li>
-          <li>
-            <span class="kv-label">消息总数</span>
-            <span class="kv-value mono">{{ messageCount == null ? '-' : messageCount }}</span>
-          </li>
-        </ul>
         <div class="card-footer">
           <button type="button" class="btn-danger" @click="handleLogout">退出登录</button>
         </div>
       </section>
     </template>
+
+    <!-- D1-W23-01 头像选择对话框 -->
+    <AvatarPickerDialog
+      v-model:open="pickerDialog.open"
+      :busy="avatarUploading || profileStore.saving"
+      :current-avatar="profileStore.avatar || ''"
+      @select-emoji="onPickEmoji"
+      @pick-image="onPickImage"
+    />
+
+    <!-- D1-W23-02 头像裁剪对话框 -->
+    <AvatarCropDialog
+      v-model:open="cropDialog.open"
+      :source="cropDialog.source"
+      @confirm="onCropConfirm"
+      @cancel="onCropCancel"
+    />
   </div>
 </template>
 
@@ -375,8 +431,34 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
   opacity: 0.7;
   cursor: not-allowed;
 }
-.hidden-input {
-  display: none;
+/* D1-W23-05 统计卡片网格 */
+.stats-card .card-header {
+  border-bottom: 1px solid var(--color-divider);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--color-divider);
+}
+.stat-item:last-child {
+  border-right: none;
+}
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 .meta {

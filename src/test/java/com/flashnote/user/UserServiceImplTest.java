@@ -222,4 +222,64 @@ class UserServiceImplTest {
         assertEquals(ErrorCode.BAD_REQUEST.getCode(), ex.getCode());
         verify(friendRelationMapper, never()).selectById(any());
     }
+
+    // D1-W23-01 放宽 DTO 后，updateAvatar 在 service 层补白名单校验
+    @Test
+    void updateAvatar_acceptsEmoji() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(currentUserService.getRequiredUser("alice")).thenReturn(user);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        String result = service.updateAvatar("alice", "💼");
+        assertEquals("💼", result);
+        assertEquals("💼", user.getAvatar());
+        verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void updateAvatar_acceptsAbsoluteUrl() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(currentUserService.getRequiredUser("alice")).thenReturn(user);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        String url = "http://h/api/files/download?objectName=1/abc.jpg";
+        service.updateAvatar("alice", url);
+        assertEquals(url, user.getAvatar());
+    }
+
+    @Test
+    void updateAvatar_rejectsXssLikeString() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        // 包含 < > 的短字符串（可能是 XSS 片段）
+        BusinessException ex1 = assertThrows(BusinessException.class,
+                () -> service.updateAvatar("alice", "<b>"));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), ex1.getCode());
+        // 过长短字符串（非 URL 情境）
+        BusinessException ex2 = assertThrows(BusinessException.class,
+                () -> service.updateAvatar("alice", "abcdefghijklmnopqrstu"));
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), ex2.getCode());
+        // 空
+        assertThrows(BusinessException.class, () -> service.updateAvatar("alice", "   "));
+        verify(userMapper, never()).updateById(any(User.class));
+    }
 }

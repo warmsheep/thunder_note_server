@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { fetchAsObjectUrl } from '../api/files'
-import { extractObjectName, needsAuthenticatedFetch } from '../utils/avatarHelpers'
+import { extractObjectName, needsAuthenticatedFetch, isEmojiAvatar } from '../utils/avatarHelpers'
 
-// D1-W11 鉴权头像
-// - 后端 avatar 字段是 `${origin}/api/files/download?objectName=...` 形式
-// - 浏览器 <img src> 直接走会因为没有 Authorization 拿到 401，必须 fetch+blob
-// - 公开 CDN 的 URL（不命中 needsAuthenticatedFetch）则当作普通图片直接走
-// - 失败或没头像时显示 fallback 字符（昵称首字符）
+// D1-W11 / W23 鉴权头像
+// - 后端 avatar 字段的四种取值：
+//   1) `${origin}/api/files/download?objectName=...`（鉴权下载）→ fetch+blob 显示
+//   2) 普通 CDN URL（https开头但非识别的 download）→ 直接 <img src>
+//   3) objectName（userId/uuid.ext）→ fetch+blob
+//   4) emoji / 短字符串（W23-01 新增）→ 直接渲染作为文本
+// - 图片加载失败或没有头像时显示 fallback 字符（昵称首字符）
 
 const props = defineProps({
   avatar: { type: String, default: '' },
@@ -21,9 +23,21 @@ const loading = ref(false)
 
 const sizePx = computed(() => `${props.size}px`)
 const fontPx = computed(() => `${Math.round(props.size * 0.45)}px`)
-const directSrc = computed(() => (props.avatar && !needsAuthenticatedFetch(props.avatar) ? props.avatar : ''))
-const showImage = computed(() => Boolean(blobUrl.value || directSrc.value) && !failed.value)
+
+// emoji 头像：不走 <img>，直接以文本显示原字符串
+const emojiText = computed(() => (isEmojiAvatar(props.avatar) ? String(props.avatar).trim() : ''))
+const showEmoji = computed(() => Boolean(emojiText.value) && !failed.value)
+
+// 普通 URL（非禁是非 emoji，且不需鉴权请求） → 直接 <img src>
+const directSrc = computed(() =>
+  props.avatar && !isEmojiAvatar(props.avatar) && !needsAuthenticatedFetch(props.avatar)
+    ? props.avatar
+    : ''
+)
+const showImage = computed(() => !emojiText.value && Boolean(blobUrl.value || directSrc.value) && !failed.value)
+// emoji 先于 fallback；两者都无时才用 props.fallback 首字符
 const fallbackChar = computed(() => (props.fallback || '?').slice(0, 1))
+const emojiFontPx = computed(() => `${Math.round(props.size * 0.6)}px`)
 
 function dispose() {
   if (blobUrl.value) {
@@ -36,6 +50,8 @@ async function load() {
   dispose()
   failed.value = false
   if (!props.avatar) return
+  // emoji 分支：无需网络请求
+  if (isEmojiAvatar(props.avatar)) return
   if (!needsAuthenticatedFetch(props.avatar)) return
   const objectName = extractObjectName(props.avatar)
   if (!objectName) return
@@ -62,6 +78,12 @@ onBeforeUnmount(dispose)
       alt="avatar"
       @error="failed = true"
     />
+    <span
+      v-else-if="showEmoji"
+      class="emoji"
+      :style="{ fontSize: emojiFontPx }"
+      aria-hidden="true"
+    >{{ emojiText }}</span>
     <span v-else class="ph">{{ fallbackChar }}</span>
   </div>
 </template>
@@ -85,5 +107,16 @@ onBeforeUnmount(dispose)
 }
 .ph {
   line-height: 1;
+}
+.emoji {
+  line-height: 1;
+  /* emoji 需要透明背景，避免主色的白色默认背景混淆彩色 emoji */
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

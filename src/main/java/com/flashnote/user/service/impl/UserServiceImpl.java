@@ -89,8 +89,32 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public String updateAvatar(String username, String avatarUrl) {
+        // D1-W23-01 放宽 DTO 后，这里补业务校验：
+        //   - 必须非空（DTO 已 @NotBlank 兜底一次）
+        //   - 允许两种形态：绝对 URL（http/https） 或 纯 emoji/短字符串（长度 ≤ 16，不含控制字符 / 引号 / 尖括号，避免 XSS）
+        if (avatarUrl == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is required");
+        }
+        String trimmed = avatarUrl.trim();
+        if (trimmed.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is required");
+        }
+        boolean isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+        if (!isUrl) {
+            // 非 URL 场景：作为 emoji / 短字符串；长度与字符白名单严格收紧
+            if (trimmed.length() > 16) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is too long");
+            }
+            for (int i = 0; i < trimmed.length(); i++) {
+                char c = trimmed.charAt(i);
+                if (c < 0x20 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '/') {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar contains invalid characters");
+                }
+            }
+        }
+
         User user = getRequiredUser(username);
-        user.setAvatar(avatarUrl);
+        user.setAvatar(trimmed);
         userMapper.updateById(user);
         return avatarUrl;
     }
