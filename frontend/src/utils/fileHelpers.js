@@ -74,10 +74,19 @@ export function isVideo({ mediaType, fileName, contentType } = {}) {
 }
 
 export function isAudio({ mediaType, fileName, contentType } = {}) {
-  if (mediaType === 'audio') return true
+  // D1-W27-03 mediaType 兼容 'audio' / 'voice' / 大写 VOICE
+  const mt = mediaType ? String(mediaType).toLowerCase() : ''
+  if (mt === 'audio' || mt === 'voice') return true
   if (inMime(contentType, AUDIO_PREFIXES)) return true
   if (inExt(fileName, AUDIO_EXTENSIONS)) return true
   return false
+}
+
+// D1-W27-03 语音消息（VOICE）专属判定：与一般 audio 文件区分开，
+// 用于 MediaPreview 选择紧凑播放器布局
+export function isVoice({ mediaType } = {}) {
+  if (!mediaType) return false
+  return String(mediaType).toLowerCase() === 'voice'
 }
 
 // D1-W18-02 PDF 判定：mediaType 字段不会等于 'pdf'（后端只区分 image/video/audio/file），

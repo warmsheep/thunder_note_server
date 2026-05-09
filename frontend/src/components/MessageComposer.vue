@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { formatFileSize, inferMediaType } from '../utils/fileHelpers'
+import { useVoiceRecorder } from '../composables/useVoiceRecorder'
 
 // D1-W6 / D1-W22 消息输入区
 //
@@ -13,6 +14,14 @@ import { formatFileSize, inferMediaType } from '../utils/fileHelpers'
 //   - 发送软重置交给父级决定（成功 reset / 失败保留）
 //
 // 注：向后兼容：父级仍可以读 payload.file（取 files[0]）并逐个上传。
+//
+// D1-W27-02 录音入口：
+//   - composer 工具栏新增 🎤 按钮，点击进入录音状态，整行 composer 替换为录音 overlay：
+//     ⏺ 录音中 0:05 [取消] [发送]
+//   - 录音中其他按钮全禁用，避免上下文混乱
+//   - 发送时 emit('submit-voice', { blob, fileName, durationSec, mimeType })，由父级
+//     走 uploadFile + sendMessage(mediaType='voice', mediaDuration) 链路
+//   - 失败 / 拒绝权限：显示 errorText，3s 后自动消失
 
 const MAX_ATTACHMENTS = 9
 
@@ -35,7 +44,90 @@ const cameraBtnVisible = computed(() =>
   props.showCameraBtn === null ? autoShowCamera.value : !!props.showCameraBtn
 )
 
-const emit = defineEmits(['submit', 'overflow'])
+const emit = defineEmits(['submit', 'submit-voice', 'overflow'])
+
+// D1-W27-02 浏览器录音状态机
+const recorder = useVoiceRecorder()
+const recorderError = ref('')
+let recorderErrorTimer = null
+function clearRecorderError() {
+  recorderError.value = ''
+  if (recorderErrorTimer) {
+    clearTimeout(recorderErrorTimer)
+    recorderErrorTimer = null
+  }
+}
+function showRecorderError(msg) {
+  recorderError.value = String(msg || '')
+  if (recorderErrorTimer) clearTimeout(recorderErrorTimer)
+  recorderErrorTimer = setTimeout(() => {
+    recorderError.value = ''
+    recorderErrorTimer = null
+  }, 3000)
+}
+const isRecording = computed(() => recorder.state.value === 'recording')
+const isFinalizingVoice = computed(() => recorder.state.value === 'finalizing')
+const recordOverlayActive = computed(
+  () => recorder.state.value === 'requesting' || isRecording.value || isFinalizingVoice.value
+)
+const recordDurationLabel = computed(() => {
+  const sec = Math.max(0, Math.floor(recorder.durationMs.value / 1000))
+  const mm = String(Math.floor(sec / 60)).padStart(1, '0')
+  const ss = String(sec % 60).padStart(2, '0')
+  return `${mm}:${ss}`
+})
+
+async function startRecording() {
+  if (props.busy || recordOverlayActive.value) return
+  clearRecorderError()
+  try {
+    await recorder.start()
+  } catch (e) {
+    showRecorderError(e?.message || '录音失败')
+  }
+}
+
+async function finishRecordingAndSend() {
+  if (!isRecording.value) return
+  let result
+  try {
+    result = await recorder.stop()
+  } catch (e) {
+    showRecorderError(e?.message || '停止录音失败')
+    return
+  }
+  if (!result || !result.blob || result.blob.size === 0) {
+    showRecorderError('录音内容为空')
+    return
+  }
+  const ext = pickExtensionForMime(result.mimeType)
+  const fileName = `voice-${Date.now()}.${ext}`
+  emit('submit-voice', {
+    blob: result.blob,
+    fileName,
+    durationSec: result.durationSec,
+    mimeType: result.mimeType
+  })
+}
+
+async function cancelRecording() {
+  if (!isRecording.value && !isFinalizingVoice.value) return
+  try {
+    await recorder.cancel()
+  } catch (_e) {
+    /* 取消路径静默 */
+  }
+}
+
+function pickExtensionForMime(mt) {
+  const m = String(mt || '').toLowerCase()
+  if (m.includes('audio/webm')) return 'webm'
+  if (m.includes('audio/mp4')) return 'm4a'
+  if (m.includes('audio/ogg')) return 'ogg'
+  if (m.includes('audio/mpeg')) return 'mp3'
+  if (m.includes('audio/wav') || m.includes('audio/x-wav')) return 'wav'
+  return 'webm'
+}
 
 const text = ref('')
 const textareaEl = ref(null)
@@ -212,7 +304,8 @@ function onDrop(e) {
   }
 }
 
-// 组件卸载时释放所有 ObjectURL
+// 组件卸载时释放所有 ObjectURL + 清理录音错误 timer
+// 录音器 dispose 已经由 useVoiceRecorder 内部 onBeforeUnmount 注册
 onBeforeUnmount(() => {
   for (const u of previewUrls.value.values()) {
     try {
@@ -222,6 +315,10 @@ onBeforeUnmount(() => {
     }
   }
   previewUrls.value.clear()
+  if (recorderErrorTimer) {
+    clearTimeout(recorderErrorTimer)
+    recorderErrorTimer = null
+  }
 })
 
 // busy 变化时不动 pendingFiles，避免发送期间误删
@@ -326,7 +423,40 @@ defineExpose({
       <span class="progress-text">{{ progressPercent }}%</span>
     </div>
 
-    <div class="composer-row">
+    <!-- D1-W27-02 录音 overlay：录音状态下覆盖整行 composer，
+         显示 ⏺ 录音中 + 计时器 + 取消 / 发送按钮。
+         为了避免与外层拖拽监听冲突，overlay 没有 pointer-events:none。 -->
+    <div v-if="recordOverlayActive" class="record-overlay" role="status" aria-live="polite">
+      <span class="record-dot" aria-hidden="true"></span>
+      <span class="record-label">
+        {{ recorder.state.value === 'requesting' ? '请求麦克风...' :
+            isFinalizingVoice ? '处理中...' : '录音中' }}
+      </span>
+      <span class="record-time mono">{{ recordDurationLabel }}</span>
+      <span class="record-spacer"></span>
+      <button
+        type="button"
+        class="record-btn record-cancel"
+        :disabled="!isRecording && !isFinalizingVoice"
+        :title="'取消录音'"
+        @click="cancelRecording"
+      >取消</button>
+      <button
+        type="button"
+        class="record-btn record-send"
+        :disabled="!isRecording || isFinalizingVoice"
+        :title="'发送录音'"
+        @click="finishRecordingAndSend"
+      >发送</button>
+    </div>
+
+    <p
+      v-if="recorderError && !recordOverlayActive"
+      class="record-error"
+      role="alert"
+    >{{ recorderError }}</p>
+
+    <div v-if="!recordOverlayActive" class="composer-row">
       <button
         type="button"
         class="attach-btn"
@@ -342,6 +472,15 @@ defineExpose({
         :title="'拍照'"
         @click="pickCamera"
       >📷</button>
+      <!-- D1-W27-02 麦克风：点击进入录音状态 -->
+      <button
+        type="button"
+        class="attach-btn"
+        :disabled="busy"
+        :title="'录制语音'"
+        :aria-label="'录制语音'"
+        @click="startRecording"
+      >🎤</button>
 
       <textarea
         ref="textareaEl"
@@ -543,6 +682,82 @@ defineExpose({
 .send-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* D1-W27-02 录音 overlay：占用 composer-row 位置，与 Android 录音条视觉密度对齐 */
+.record-overlay {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-divider);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+.record-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  animation: tn-record-pulse 1s ease-in-out infinite;
+}
+@keyframes tn-record-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.1); }
+}
+.record-label {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+.record-time {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.record-spacer {
+  flex: 1;
+}
+.record-btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.record-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.record-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.record-cancel:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+.record-send {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+}
+.record-send:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+  color: #ffffff;
+}
+.record-error {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--color-danger);
+  background: var(--color-danger-bg, rgba(220, 38, 38, 0.08));
+  border-radius: var(--radius-sm);
+}
+.mono {
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
 /* W22-07 拖拽浮层 */

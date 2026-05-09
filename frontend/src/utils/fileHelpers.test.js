@@ -5,6 +5,7 @@ import {
   isImage,
   isVideo,
   isAudio,
+  isVoice,
   isPdf,
   isTextLike,
   isOfficeDoc,
@@ -57,6 +58,20 @@ describe('media type detection', () => {
     expect(isAudio({ contentType: 'audio/mpeg' })).toBe(true)
     expect(isAudio({ fileName: 'a.mp3' })).toBe(true)
     expect(isAudio({ fileName: 'a.png' })).toBe(false)
+  })
+  // D1-W27-03 VOICE 类型应被 isAudio 识别（让 MediaPreview 走 audio 分支）
+  it('isAudio 兼容 mediaType: voice / VOICE', () => {
+    expect(isAudio({ mediaType: 'voice' })).toBe(true)
+    expect(isAudio({ mediaType: 'VOICE' })).toBe(true)
+    expect(isAudio({ mediaType: 'Voice' })).toBe(true)
+  })
+  it('isVoice 仅 mediaType=voice/VOICE 命中', () => {
+    expect(isVoice({ mediaType: 'voice' })).toBe(true)
+    expect(isVoice({ mediaType: 'VOICE' })).toBe(true)
+    expect(isVoice({ mediaType: 'audio' })).toBe(false)
+    expect(isVoice({ mediaType: 'image' })).toBe(false)
+    expect(isVoice({})).toBe(false)
+    expect(isVoice({ mediaType: null })).toBe(false)
   })
   it('isPdf by contentType / extension', () => {
     expect(isPdf({ contentType: 'application/pdf' })).toBe(true)

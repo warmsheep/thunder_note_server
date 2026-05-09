@@ -2,10 +2,11 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { fetchAsObjectUrl, fetchAsText, triggerDownload } from '../api/files'
 import {
-  isImage, isVideo, isAudio, isPdf, isTextLike, isOfficeDoc,
+  isImage, isVideo, isAudio, isVoice, isPdf, isTextLike, isOfficeDoc,
   formatFileSize, shortenFileName
 } from '../utils/fileHelpers'
 import { useToast } from '../composables/useToast'
+import { notifyAudioPlay, notifyAudioPauseOrEnded } from '../composables/useExclusiveAudio'
 import ImageLightbox from './ImageLightbox.vue'
 import PdfViewerDialog from './PdfViewerDialog.vue'
 import TextViewerDialog from './TextViewerDialog.vue'
@@ -45,6 +46,35 @@ const previewKind = computed(() => {
   if (isAudio(detectionCtx.value)) return 'audio'
   return 'file'
 })
+
+// D1-W27-03 语音消息：紧凑播放器布局，宽度按 mediaDuration 在 [120, 240]px 间线性映射
+const isVoiceMessage = computed(() => isVoice({ mediaType: m.value.mediaType }))
+const voiceDurationSec = computed(() => {
+  const d = Number(m.value.mediaDuration)
+  return Number.isFinite(d) && d >= 0 ? Math.round(d) : 0
+})
+const voiceWidthPx = computed(() => {
+  // 0~60s 线性映射 120~240，超过 60s 截断到 240
+  const sec = voiceDurationSec.value
+  if (sec <= 0) return 160
+  const ratio = Math.min(1, sec / 60)
+  return Math.round(120 + ratio * 120)
+})
+function formatVoiceDuration(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0))
+  const mm = String(Math.floor(s / 60)).padStart(1, '0')
+  const ss = String(s % 60).padStart(2, '0')
+  return `${mm}:${ss}`
+}
+
+// D1-W27-03 互斥播放：监听 audio 元素的 play / pause / ended，与全局 currentAudio 协作
+const audioEl = ref(null)
+function onAudioPlay(ev) {
+  notifyAudioPlay(ev?.target || audioEl.value)
+}
+function onAudioPauseOrEnded(ev) {
+  notifyAudioPauseOrEnded(ev?.target || audioEl.value)
+}
 
 const isPdfFile = computed(() => isPdf(detectionCtx.value))
 const isTextFile = computed(() => !isPdfFile.value && !isOfficeDoc(detectionCtx.value) && isTextLike(detectionCtx.value))
@@ -203,6 +233,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  // D1-W27-03 互斥播放：组件销毁前若自身正在播放，注销全局当前 audio
+  if (audioEl.value) {
+    notifyAudioPauseOrEnded(audioEl.value)
+  }
   disposeBlob()
   disposePdfBlob()
 })
@@ -257,15 +291,40 @@ watch(
     </template>
 
     <template v-else-if="previewKind === 'audio'">
-      <div v-if="loading" class="media-stub">音频加载中...</div>
-      <audio
-        v-else-if="blobUrl"
-        controls
-        :src="blobUrl"
-        class="media-audio"
-        preload="metadata"
-      ></audio>
-      <div v-else class="media-stub failed">音频加载失败 · {{ fileName }}</div>
+      <div v-if="loading" class="media-stub">{{ isVoiceMessage ? '语音加载中...' : '音频加载中...' }}</div>
+      <!-- D1-W27-03 VOICE 专属布局：紧凑播放器 + 时长标签；普通 audio 文件继续走宽 audio controls -->
+      <template v-else-if="blobUrl">
+        <div
+          v-if="isVoiceMessage"
+          class="voice-bubble"
+          :style="{ width: voiceWidthPx + 'px' }"
+        >
+          <span class="voice-icon" aria-hidden="true">🎙</span>
+          <audio
+            ref="audioEl"
+            controls
+            :src="blobUrl"
+            class="media-audio voice-audio"
+            preload="metadata"
+            @play="onAudioPlay"
+            @pause="onAudioPauseOrEnded"
+            @ended="onAudioPauseOrEnded"
+          ></audio>
+          <span v-if="voiceDurationSec > 0" class="voice-duration">{{ formatVoiceDuration(voiceDurationSec) }}</span>
+        </div>
+        <audio
+          v-else
+          ref="audioEl"
+          controls
+          :src="blobUrl"
+          class="media-audio"
+          preload="metadata"
+          @play="onAudioPlay"
+          @pause="onAudioPauseOrEnded"
+          @ended="onAudioPauseOrEnded"
+        ></audio>
+      </template>
+      <div v-else class="media-stub failed">{{ isVoiceMessage ? '语音加载失败' : '音频加载失败' }} · {{ fileName }}</div>
     </template>
 
     <div v-else class="media-file">
@@ -392,6 +451,32 @@ watch(
 .media-audio {
   width: 260px;
   max-width: 100%;
+}
+/* D1-W27-03 VOICE 紧凑播放器布局 */
+.voice-bubble {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+  max-width: 100%;
+}
+.voice-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.voice-audio {
+  width: 100%;
+  min-width: 80px;
+  max-width: 100%;
+}
+.voice-duration {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .media-file {

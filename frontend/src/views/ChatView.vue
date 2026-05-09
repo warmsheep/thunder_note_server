@@ -406,6 +406,64 @@ async function handleSend(payload) {
   }
 }
 
+// D1-W27-02 录音消息：MessageComposer 通过 submit-voice emit 把录音 blob 投出来，
+// 这里复用 uploadFile + chatStore.send，专门走 mediaType='voice' + mediaDuration（秒）。
+// 与 W22 文件上传链路同源，唯一不同点是 mediaType 写死为 'voice'，避免 inferMediaType 把
+// audio/webm 推断成 'audio'（导致后端 displayText 仍按 [图片]/[语音] 分类）。
+async function handleSendVoice(payload) {
+  const blob = payload && payload.blob
+  if (!blob || !blob.size) {
+    showError('录音内容为空')
+    return
+  }
+  const fileName = payload.fileName || `voice-${Date.now()}.webm`
+  const durationSec = Math.max(1, Number(payload.durationSec) || 1)
+  const mimeType = payload.mimeType || blob.type || 'audio/webm'
+  // 把 Blob 包成 File（带原始 mimeType）以便 uploadFile 能正确填 multipart Content-Type
+  let file
+  try {
+    file = new File([blob], fileName, { type: mimeType })
+  } catch (_e) {
+    // 老浏览器 fallback：手动给 blob 加 name 属性，uploadFile 内部用 FormData append 会兜底
+    file = blob
+    file.name = fileName
+  }
+
+  uploading.value = true
+  uploadProgress.value = 0
+  try {
+    const result = await uploadFile(file, {
+      onUploadProgress: (e) => {
+        if (e && e.total) {
+          uploadProgress.value = e.loaded / e.total
+        }
+      }
+    })
+    const objectName = result?.objectName
+    if (!objectName) {
+      throw new Error('上传失败：缺少 objectName')
+    }
+    await chatStore.send({
+      content: '',
+      currentUserId: currentUserId.value,
+      media: {
+        mediaType: 'voice',
+        mediaUrl: objectName,
+        fileName: result?.originalFilename || fileName,
+        fileSize: blob.size != null ? Number(blob.size) : null,
+        mediaDuration: durationSec
+      }
+    })
+    await nextTick()
+    scrollToBottom({ smooth: true })
+  } catch (e) {
+    showError(e?.serverMessage || e?.message || '语音发送失败')
+  } finally {
+    uploading.value = false
+    uploadProgress.value = 0
+  }
+}
+
 // W22-04 附件溢出提示（超过 9 个）
 function onComposerOverflow(payload) {
   const max = payload?.max || 9
@@ -784,6 +842,7 @@ function onBubbleForwardSingle(payload) {
       :busy="chatStore.sending || uploading"
       :upload-progress="uploadProgress"
       @submit="handleSend"
+      @submit-voice="handleSendVoice"
       @overflow="onComposerOverflow"
     />
 
