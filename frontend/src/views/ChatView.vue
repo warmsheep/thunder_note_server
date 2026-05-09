@@ -16,6 +16,7 @@ import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
 import CardEditorDialog from '../components/CardEditorDialog.vue'
+import CardDetailDialog from '../components/CardDetailDialog.vue'
 import { uploadFile, triggerDownload } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
 import { useChatScroll } from '../composables/useChatScroll'
@@ -851,35 +852,13 @@ function onBubbleForwardSingle(payload) {
       </div>
     </div>
 
-    <!-- D1-W17-02 卡片详情：只读 -->
-    <div v-if="cardDetailDialog.open" class="modal-overlay" @click.self="closeCardDetail">
-      <div class="modal modal-large" role="dialog" aria-label="卡片详情">
-        <header class="modal-header">
-          <h2 class="modal-title">{{ cardDetailDialog.message?.payload?.title || '卡片消息' }}</h2>
-          <button type="button" class="modal-close" @click="closeCardDetail">×</button>
-        </header>
-        <div class="modal-body card-detail">
-          <p v-if="cardDetailDialog.message?.payload?.summary" class="card-detail-summary">
-            {{ cardDetailDialog.message.payload.summary }}
-          </p>
-          <ul class="card-items">
-            <li
-              v-for="(item, i) in (cardDetailDialog.message?.payload?.items || [])"
-              :key="i"
-              class="card-item"
-            >
-              <span class="card-item-index">{{ i + 1 }}</span>
-              <div class="card-item-body">
-                <p class="card-item-meta">{{ item.type || 'TEXT' }} · {{ item.role || '-' }}</p>
-                <p v-if="item.content" class="card-item-content">{{ item.content }}</p>
-                <p v-if="item.fileName" class="card-item-file">📎 {{ item.fileName }}</p>
-              </div>
-            </li>
-          </ul>
-          <p class="card-detail-hint">提示：当前后端不支持卡片编辑；如需修改，请重新合并新卡片。</p>
-        </div>
-      </div>
-    </div>
+    <!-- D1-W17-02 / D1-W25-02 卡片详情：复用 CardDetailDialog 组件，
+         每个 item 真实渲染图片 / 视频 / 音频 / 文件 / 文本，与 Android `CardDetailActivity` 对齐 -->
+    <CardDetailDialog
+      v-model:open="cardDetailDialog.open"
+      :message="cardDetailDialog.message"
+      @close="closeCardDetail"
+    />
 
     <!-- D1-W17-03 / D1-W20-05 转发：选择目标闪记或联系人 -->
     <div v-if="forwardDialog.open" class="modal-overlay" @click.self="cancelForward">
@@ -1063,67 +1042,6 @@ function onBubbleForwardSingle(payload) {
   cursor: pointer;
 }
 .btn-secondary:disabled { opacity: 0.55; cursor: not-allowed; }
-
-.card-detail-summary {
-  margin: 0;
-  padding: 8px 12px;
-  background: var(--color-bg);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  color: var(--color-text-secondary);
-}
-.card-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.card-item {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-}
-.card-item-index {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 22px;
-}
-.card-item-body { min-width: 0; }
-.card-item-meta {
-  margin: 0 0 4px 0;
-  font-size: 11px;
-  color: var(--color-text-hint);
-  text-transform: uppercase;
-}
-.card-item-content {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.card-item-file {
-  margin: 4px 0 0 0;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-.card-detail-hint {
-  margin: 8px 0 0 0;
-  font-size: 12px;
-  color: var(--color-text-hint);
-  text-align: center;
-}
 
 /* W20-05 转发对话框 tab：闪记 / 联系人 */
 .forward-tabs {

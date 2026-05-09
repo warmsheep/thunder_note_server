@@ -1,9 +1,10 @@
 <script setup>
 import { computed, ref, onBeforeUnmount } from 'vue'
 import { renderMarkdown } from '../utils/markdownRenderer'
-import { captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
+import { buildCardSummary, captionForMediaContent, textOfMessage } from '../utils/messageHelpers'
 import MediaPreview from './MediaPreview.vue'
 import MessageActionMenu from './MessageActionMenu.vue'
+import CardMediaGrid from './CardMediaGrid.vue'
 
 // D1-W6 / D1-W21 单条消息气泡
 // - 自己发送的右对齐绿色气泡，对方/系统左对齐灰色气泡
@@ -46,6 +47,21 @@ const status = computed(() => m.value.__status || 'sent')
 
 const isCard = computed(() => Boolean(m.value.payload && m.value.payload.cardType))
 const isMedia = computed(() => Boolean(m.value.mediaType) && !isCard.value)
+
+// D1-W25-01 / W25-04 卡片气泡内的 items / 文件列表 / 智能 summary
+const cardItems = computed(() => {
+  const items = m.value.payload && m.value.payload.items
+  return Array.isArray(items) ? items : []
+})
+// 非图片/视频 item 单独以「📎 fileName」行渲染在网格下方（FILE / VOICE / AUDIO）
+const cardFileItems = computed(() => {
+  return cardItems.value.filter((it) => {
+    const t = (it && it.type ? String(it.type) : '').toUpperCase()
+    return t === 'FILE' || t === 'VOICE' || t === 'AUDIO'
+  })
+})
+// summary 智能兜底：payload.summary 为空时按 items[0..2] 占位拼接
+const cardSummary = computed(() => buildCardSummary(m.value.payload))
 
 // D1-W17-04 仅纯文本气泡渲染 markdown；媒体气泡的 caption 仍保留纯文本（避免 caption 内嵌过多结构）
 const renderedHtml = computed(() => renderMarkdown(m.value.content))
@@ -212,6 +228,9 @@ async function onMenuSelect(key) {
     <div class="bubble-wrap">
       <div class="bubble" :class="[mine ? 'bubble-mine' : 'bubble-other', `status-${status}`]">
         <template v-if="isCard">
+          <!-- D1-W25-01 卡片气泡升级：在 title 之后真实渲染媒体网格 + 文件列表，
+               与 Android `MessageCompositeBinder` 的视觉密度对齐；
+               summary 为空时由 buildCardSummary 兜底拼接 items 摘要。 -->
           <button
             type="button"
             class="card-clickable"
@@ -220,7 +239,18 @@ async function onMenuSelect(key) {
           >
             <p class="card-type">📇 卡片</p>
             <p v-if="m.payload.title" class="card-title">{{ m.payload.title }}</p>
-            <p v-if="m.payload.summary" class="card-summary">{{ m.payload.summary }}</p>
+            <CardMediaGrid
+              v-if="cardItems.length"
+              :items="cardItems"
+              @open="emit('open-card', m)"
+            />
+            <ul v-if="cardFileItems.length" class="card-file-list">
+              <li v-for="(f, i) in cardFileItems" :key="i" class="card-file-row">
+                <span class="card-file-icon" aria-hidden="true">📎</span>
+                <span class="card-file-name">{{ f.fileName || (f.type || 'FILE') }}</span>
+              </li>
+            </ul>
+            <p v-if="cardSummary" class="card-summary">{{ cardSummary }}</p>
             <p class="card-hint">点击查看详情</p>
           </button>
         </template>
@@ -322,9 +352,37 @@ async function onMenuSelect(key) {
   font-weight: 600;
 }
 .card-summary {
-  margin: 0;
+  margin: 6px 0 0 0;
   font-size: 13px;
   color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+/* D1-W25-01 卡片底部文件列表（FILE / VOICE / AUDIO 类 item）：
+   与 Android `bindCompositeFiles` 视觉对齐，占位符 + 文件名一行 */
+.card-file-list {
+  list-style: none;
+  margin: 6px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.card-file-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.card-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 .text.caption {
   margin: 6px 0 0 0;

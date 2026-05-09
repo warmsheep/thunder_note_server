@@ -3,6 +3,7 @@ import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { uploadFile } from '../api/files'
 import { createCompositeMessage } from '../api/messages'
 import { formatFileSize, inferMediaType } from '../utils/fileHelpers'
+import { applyInlineToken, toggleLinePrefix } from '../utils/markdownEditor'
 
 // D1-W22-03 多媒体卡片新建对话框
 //
@@ -28,6 +29,7 @@ const props = defineProps({
 const emit = defineEmits(['cancel', 'created', 'update:open'])
 
 const titleEl = ref(null)
+const contentEl = ref(null)
 const title = ref('')
 const content = ref('')
 const pendingFiles = ref([])
@@ -266,6 +268,56 @@ onBeforeUnmount(() => {
   previewUrls.value.clear()
 })
 
+// D1-W25-03 markdown 工具栏：粗体 / 斜体 / 引用 / 待办
+//
+// 与 Android `CardEditorFragment` 行为对齐：
+//   - 粗体 / 斜体（行内）：选中文本两侧加 ** / *；未选中则插入 ****，光标在中间
+//   - 引用 / 待办（行前缀）：当前行（或选中跨多行）加 / 取消 `> ` / `- [ ] `
+//
+// selection 同步：函数走纯 utils，组件这边只负责把结果回写 + restore selection
+function applyEditorEdit(result) {
+  const ta = contentEl.value
+  if (!ta) return
+  content.value = result.text
+  // textarea 回写后下一帧再设 selection（DOM 还没拿到新 value 时 setSelectionRange 会失效）
+  nextTick(() => {
+    try {
+      ta.focus()
+      ta.setSelectionRange(result.selStart, result.selEnd)
+    } catch (_e) { /* ignore */ }
+  })
+}
+
+function applyToken(prefix, suffix) {
+  const ta = contentEl.value
+  if (!ta) return
+  const result = applyInlineToken({
+    text: content.value,
+    selStart: ta.selectionStart || 0,
+    selEnd: ta.selectionEnd || 0,
+    prefix,
+    suffix
+  })
+  applyEditorEdit(result)
+}
+
+function applyLinePrefix(prefix) {
+  const ta = contentEl.value
+  if (!ta) return
+  const result = toggleLinePrefix({
+    text: content.value,
+    selStart: ta.selectionStart || 0,
+    selEnd: ta.selectionEnd || 0,
+    prefix
+  })
+  applyEditorEdit(result)
+}
+
+function onFmtBold() { applyToken('**', '**') }
+function onFmtItalic() { applyToken('*', '*') }
+function onFmtQuote() { applyLinePrefix('> ') }
+function onFmtTodo() { applyLinePrefix('- [ ] ') }
+
 defineExpose({ reset })
 </script>
 
@@ -305,8 +357,44 @@ defineExpose({ reset })
 
         <div class="form-row">
           <label class="form-label" for="cardEditorContent">正文（可选）</label>
+          <!-- D1-W25-03 markdown 工具栏：与 Android `CardEditorFragment` 4 个按钮对齐 -->
+          <div class="md-toolbar" role="toolbar" aria-label="markdown 工具栏">
+            <button
+              type="button"
+              class="md-btn"
+              :disabled="submitting"
+              :title="'粗体（**...**）'"
+              aria-label="粗体"
+              @click="onFmtBold"
+            ><b>B</b></button>
+            <button
+              type="button"
+              class="md-btn"
+              :disabled="submitting"
+              :title="'斜体（*...*）'"
+              aria-label="斜体"
+              @click="onFmtItalic"
+            ><i>I</i></button>
+            <button
+              type="button"
+              class="md-btn"
+              :disabled="submitting"
+              :title="'引用（行首 > ）'"
+              aria-label="引用"
+              @click="onFmtQuote"
+            >❝</button>
+            <button
+              type="button"
+              class="md-btn"
+              :disabled="submitting"
+              :title="'待办（行首 - [ ] ）'"
+              aria-label="待办"
+              @click="onFmtTodo"
+            >☐</button>
+          </div>
           <textarea
             id="cardEditorContent"
+            ref="contentEl"
             v-model="content"
             class="form-textarea"
             rows="3"
@@ -510,6 +598,38 @@ defineExpose({ reset })
 .form-textarea:focus {
   border-color: var(--color-primary);
 }
+/* D1-W25-03 markdown 工具栏：粗体 / 斜体 / 引用 / 待办 4 个按钮 */
+.md-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.md-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.md-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.md-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.md-btn b { font-weight: 700; }
+.md-btn i { font-style: italic; font-family: serif; }
+
 .form-textarea {
   resize: vertical;
   min-height: 60px;

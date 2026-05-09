@@ -12,7 +12,8 @@ import {
   replaceOptimisticByClientId,
   isMediaPlaceholderContent,
   captionForMediaContent,
-  textOfMessage
+  textOfMessage,
+  buildCardSummary
 } from './messageHelpers'
 
 describe('inbox helpers', () => {
@@ -218,5 +219,76 @@ describe('textOfMessage', () => {
   it('null/empty message returns empty string', () => {
     expect(textOfMessage(null)).toBe('')
     expect(textOfMessage({})).toBe('')
+  })
+})
+
+// D1-W25-04 卡片 summary 智能兜底（与 Android `MessageCompositeBinder.buildSummary` 对齐）
+describe('buildCardSummary', () => {
+  it('payload.summary 非空 → 直接返回（保留原文，不截断）', () => {
+    const payload = {
+      summary: '会议纪要：\n- 讨论 W25 卡片对齐\n- 排期下周',
+      items: [{ type: 'IMAGE', content: '不应被使用' }]
+    }
+    expect(buildCardSummary(payload)).toBe('会议纪要：\n- 讨论 W25 卡片对齐\n- 排期下周')
+  })
+
+  it('payload.summary 为空时按 items[0..2] item.content 优先拼接', () => {
+    const payload = {
+      summary: '',
+      items: [
+        { type: 'TEXT', content: '第一段内容' },
+        { type: 'TEXT', content: '第二段内容' },
+        { type: 'TEXT', content: '第三段内容' }
+      ]
+    }
+    expect(buildCardSummary(payload)).toBe('第一段内容\n第二段内容\n第三段内容')
+  })
+
+  it('item.content 为空 → 用 type 占位符（[图片]/[视频]/[文件]/[语音]）', () => {
+    const payload = {
+      items: [
+        { type: 'IMAGE' },
+        { type: 'video' }, // 大小写不敏感
+        { type: 'FILE' }
+      ]
+    }
+    expect(buildCardSummary(payload)).toBe('[图片]\n[视频]\n[文件]')
+  })
+
+  it('VOICE 与 AUDIO 都映射成 [语音]', () => {
+    const a = { items: [{ type: 'VOICE' }] }
+    const b = { items: [{ type: 'AUDIO' }] }
+    expect(buildCardSummary(a)).toBe('[语音]')
+    expect(buildCardSummary(b)).toBe('[语音]')
+  })
+
+  it('items 多于 3 时只取前 3 行', () => {
+    const payload = {
+      items: [
+        { type: 'IMAGE' },
+        { type: 'IMAGE' },
+        { type: 'IMAGE' },
+        { type: 'IMAGE' },
+        { type: 'IMAGE' }
+      ]
+    }
+    expect(buildCardSummary(payload)).toBe('[图片]\n[图片]\n[图片]')
+  })
+
+  it('items 为空 / 缺失 → 返回空串', () => {
+    expect(buildCardSummary(null)).toBe('')
+    expect(buildCardSummary({})).toBe('')
+    expect(buildCardSummary({ summary: '   ', items: [] })).toBe('')
+  })
+
+  it('TEXT item 的 content 与媒体 item 占位混合，保持顺序', () => {
+    const payload = {
+      items: [
+        { type: 'TEXT', content: '前言' },
+        { type: 'IMAGE' },
+        { type: 'FILE', fileName: 'spec.pdf' } // fileName 不参与 fallback，应该走 [文件]
+      ]
+    }
+    expect(buildCardSummary(payload)).toBe('前言\n[图片]\n[文件]')
   })
 })

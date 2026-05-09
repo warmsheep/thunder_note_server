@@ -147,6 +147,48 @@ export function buildInitialMessages(records) {
   return normalizePageRecords(records)
 }
 
+// D1-W25-04 卡片 summary 智能兜底（与 Android `MessageCompositeBinder.buildSummary()` 对齐）
+//
+// 规则：
+//   1. payload.summary 非空 → 直接用（不截断，让 UI 自己处理）
+//   2. 否则取 items[0..2] 拼接：
+//      - item.content 非空 → 用文本
+//      - 否则按 type 兜底为 [图片] / [视频] / [文件] / [语音]
+//      （与 strings.xml `chat_media_*_placeholder` 一致）
+//   3. 拼接结果按 \n 切分，最多 3 行；超过截断
+//
+// 字段约定：CardItem 的 type 大小写不敏感（Android 用 IMAGE/VIDEO/FILE/VOICE 大写）
+const CARD_TYPE_PLACEHOLDERS = {
+  IMAGE: '[图片]',
+  VIDEO: '[视频]',
+  FILE: '[文件]',
+  VOICE: '[语音]',
+  AUDIO: '[语音]',
+  TEXT: ''
+}
+
+function fallbackLineForCardItem(item) {
+  if (!item) return ''
+  const content = item.content == null ? '' : String(item.content).trim()
+  if (content) return content
+  const type = (item.type || '').toString().toUpperCase()
+  return CARD_TYPE_PLACEHOLDERS[type] || ''
+}
+
+export function buildCardSummary(payload) {
+  if (!payload) return ''
+  const explicit = payload.summary == null ? '' : String(payload.summary).trim()
+  if (explicit) return explicit
+  const items = Array.isArray(payload.items) ? payload.items : []
+  const lines = []
+  for (const item of items) {
+    const line = fallbackLineForCardItem(item)
+    if (line) lines.push(line)
+    if (lines.length >= 3) break
+  }
+  return lines.join('\n')
+}
+
 // 用 server 消息替换 optimistic 消息（按 clientRequestId 匹配）；找不到时 append。
 export function replaceOptimisticByClientId(messages, serverMessage) {
   if (!serverMessage) return messages
