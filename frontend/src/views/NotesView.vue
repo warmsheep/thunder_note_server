@@ -956,17 +956,32 @@ void currentUserId
   border-color: var(--color-danger);
   color: var(--color-danger);
 }
+/* D1-W28-12 搜索结果项布局：原先用 grid 但没有 grid-template-areas，
+   而 .note-icon / .note-meta 都依赖 `grid-area: icon/meta`，导致两者
+   被放到隐式 grid 单元格而不是同一行 → 排版错乱。改用 flex，
+   让子元素自然按横向排列，icon 自身仍是 40×40 圆角块。 */
 .search-hit {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 12px;
+  display: flex;
   align-items: center;
+  gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--color-divider);
   cursor: pointer;
+  transition: background 0.12s;
+}
+.search-hit:hover {
+  background: var(--color-bg);
 }
 .search-hit:last-child {
   border-bottom: none;
+}
+/* search-hit 里 .note-icon 不再依赖 grid-area；保留 40x40 圆角块外形 */
+.search-hit .note-icon {
+  flex-shrink: 0;
+}
+.search-hit .note-meta {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
