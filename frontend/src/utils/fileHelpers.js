@@ -59,24 +59,41 @@ function inMime(mime, prefixes) {
   return prefixes.some((p) => String(mime).toLowerCase().startsWith(p))
 }
 
+// D1-W28-09 mediaType 优先：当 mediaType 显式为 image/video/audio/voice/file/composite 之一时，
+// 以它为准，不再被 fileName 后缀 / contentType 反向覆盖。
+// 修复场景：语音消息 mediaType='voice' + fileName='voice-xxx.webm' 以前会被 isVideo 错认（webm 在 VIDEO_EXTENSIONS），
+// 导致 MediaPreview 走 video 分支 渲染 <video controls>，产生“黑色视频区 + audio 条”黑框。
+function explicitMediaType(mt) {
+  if (!mt) return ''
+  const t = String(mt).toLowerCase()
+  // 只对后端服务映射过的合法值进入优先路径，避免误伤未知 mediaType
+  if (['image', 'video', 'audio', 'voice', 'file', 'composite'].includes(t)) return t
+  return ''
+}
+
 export function isImage({ mediaType, fileName, contentType } = {}) {
-  if (mediaType === 'image') return true
+  const mt = explicitMediaType(mediaType)
+  if (mt === 'image') return true
+  if (mt) return false
   if (inMime(contentType, IMAGE_PREFIXES)) return true
   if (inExt(fileName, IMAGE_EXTENSIONS)) return true
   return false
 }
 
 export function isVideo({ mediaType, fileName, contentType } = {}) {
-  if (mediaType === 'video') return true
+  const mt = explicitMediaType(mediaType)
+  if (mt === 'video') return true
+  if (mt) return false
   if (inMime(contentType, VIDEO_PREFIXES)) return true
   if (inExt(fileName, VIDEO_EXTENSIONS)) return true
   return false
 }
 
 export function isAudio({ mediaType, fileName, contentType } = {}) {
+  const mt = explicitMediaType(mediaType)
   // D1-W27-03 mediaType 兼容 'audio' / 'voice' / 大写 VOICE
-  const mt = mediaType ? String(mediaType).toLowerCase() : ''
   if (mt === 'audio' || mt === 'voice') return true
+  if (mt) return false
   if (inMime(contentType, AUDIO_PREFIXES)) return true
   if (inExt(fileName, AUDIO_EXTENSIONS)) return true
   return false

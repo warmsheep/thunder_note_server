@@ -73,6 +73,33 @@ describe('media type detection', () => {
     expect(isVoice({})).toBe(false)
     expect(isVoice({ mediaType: null })).toBe(false)
   })
+  it('mediaType 优先 — 防止 webm 录音被 fileName 后缀错认为 video', () => {
+    const ctx = { mediaType: 'voice', fileName: 'voice-1.webm' }
+    expect(isVideo(ctx)).toBe(false) // webm 后缀不再覆盖 mediaType
+    expect(isAudio(ctx)).toBe(true)
+    expect(isVoice(ctx)).toBe(true)
+  })
+  it('mediaType=audio + fileName=clip.mp4 → 走 audio，不走 video', () => {
+    const ctx = { mediaType: 'audio', fileName: 'clip.mp4' }
+    expect(isVideo(ctx)).toBe(false)
+    expect(isAudio(ctx)).toBe(true)
+  })
+  it('mediaType=image + fileName=foo.mp4 → 走 image，不走 video', () => {
+    const ctx = { mediaType: 'image', fileName: 'foo.mp4' }
+    expect(isImage(ctx)).toBe(true)
+    expect(isVideo(ctx)).toBe(false)
+  })
+  it('mediaType=file + fileName=foo.png → 不走 image / video / audio', () => {
+    const ctx = { mediaType: 'file', fileName: 'foo.png' }
+    expect(isImage(ctx)).toBe(false)
+    expect(isVideo(ctx)).toBe(false)
+    expect(isAudio(ctx)).toBe(false)
+  })
+  it('mediaType 缺失时仍走 fileName 兜底', () => {
+    expect(isVideo({ fileName: 'a.mp4' })).toBe(true)
+    expect(isAudio({ fileName: 'a.mp3' })).toBe(true)
+    expect(isImage({ fileName: 'a.png' })).toBe(true)
+  })
   it('isPdf by contentType / extension', () => {
     expect(isPdf({ contentType: 'application/pdf' })).toBe(true)
     expect(isPdf({ fileName: 'spec.PDF' })).toBe(true)
