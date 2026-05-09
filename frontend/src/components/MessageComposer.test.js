@@ -157,4 +157,37 @@ describe('MessageComposer', () => {
     expect(ctx.submitArg.value.file).toBe(ctx.submitArg.value.files[0])
     ctx.unmount()
   })
+
+  // D1-W24-05 ChatView 会用 setText / getText 恢复草稿
+  it('暴露 getText / setText 给父级（W24-05 草稿接入点）', async () => {
+    const ctx = mountComposer()
+    await nextTick()
+    const composer = ctx.composerRef.value
+    expect(typeof composer.getText).toBe('function')
+    expect(typeof composer.setText).toBe('function')
+
+    // 初始为空
+    expect(composer.getText()).toBe('')
+
+    // 写入草稿后 getText 可读出
+    composer.setText('未发送草稿文本')
+    await nextTick()
+    expect(composer.getText()).toBe('未发送草稿文本')
+    // DOM textarea 也同步
+    const textarea = ctx.root.querySelector('textarea.composer-input')
+    expect(textarea.value).toBe('未发送草稿文本')
+
+    // null / undefined 安全回退到空字符串
+    composer.setText(null)
+    await nextTick()
+    expect(composer.getText()).toBe('')
+
+    // reset 也会清空文本（确保发送成功后清理草稿的顺序正确）
+    composer.setText('abc')
+    await nextTick()
+    composer.reset()
+    await nextTick()
+    expect(composer.getText()).toBe('')
+    ctx.unmount()
+  })
 })

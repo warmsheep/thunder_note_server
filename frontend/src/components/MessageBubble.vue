@@ -36,7 +36,8 @@ const emit = defineEmits([
   'toggle-favorite',
   'open-card',
   'forward-single',
-  'enter-select-with'
+  'enter-select-with',
+  'download'
 ])
 
 const m = computed(() => props.message || {})
@@ -80,6 +81,12 @@ const menuItems = computed(() => {
       key: 'favorite',
       label: props.favorited ? '取消收藏' : '收藏',
       icon: props.favorited ? '★' : '☆'
+    },
+    {
+      key: 'download',
+      label: '保存到本地',
+      icon: '💾',
+      disabled: !isMedia.value || !m.value.mediaUrl
     },
     { key: 'select', label: '多选', icon: '☑' },
     { key: 'delete', label: '删除', icon: '🗑', danger: true }
@@ -172,6 +179,9 @@ async function onMenuSelect(key) {
       break
     case 'favorite':
       emit('toggle-favorite', m.value)
+      break
+    case 'download':
+      emit('download', m.value)
       break
     case 'select':
       emit('enter-select-with', m.value)

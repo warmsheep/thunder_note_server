@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContactsStore } from '../stores/contacts'
 import { useToast } from '../composables/useToast'
+import { useSwipeReveal } from '../composables/useSwipeReveal'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -31,9 +32,34 @@ function openContactChat(contact) {
 const activeTab = ref('contacts') // contacts | requests
 const showSearch = ref(false)
 const searchInput = ref('')
+const isMobileLayout = ref(false)
 
 const removeDialog = ref({ open: false, target: null, busy: false, isPending: false })
 const requestActionBusyId = ref(null)
+const { begin, move, end, close, offsetOf, isOpen } = useSwipeReveal()
+
+function updateLayout() {
+  if (typeof window === 'undefined' || !window.matchMedia) {
+    isMobileLayout.value = false
+    return
+  }
+  isMobileLayout.value = window.matchMedia('(max-width: 768px)').matches
+}
+
+updateLayout()
+let mqList = null
+if (typeof window !== 'undefined' && window.matchMedia) {
+  mqList = window.matchMedia('(max-width: 768px)')
+  if (typeof mqList.addEventListener === 'function') {
+    mqList.addEventListener('change', updateLayout)
+  }
+}
+
+onBeforeUnmount(() => {
+  if (mqList && typeof mqList.removeEventListener === 'function') {
+    mqList.removeEventListener('change', updateLayout)
+  }
+})
 
 const initialLoading = computed(
   () => (activeTab.value === 'contacts' ? !store.contactsLoaded : !store.requestsLoaded)
@@ -128,6 +154,7 @@ async function rejectRequest(req) {
 
 function askRemoveContact(contact) {
   if (!contact || contact.userId == null) return
+  close(contact.userId)
   removeDialog.value = {
     open: true,
     target: contact,
@@ -181,6 +208,21 @@ function nameOf(o) {
   if (!o) return ''
   return o.nickname || o.username || `用户 ${o.userId ?? ''}`
 }
+
+function onContactTouchStart(event, contact) {
+  if (!isMobileLayout.value || !contact?.userId) return
+  begin(contact.userId, event, event.currentTarget?.offsetWidth || 240)
+}
+
+function onContactTouchMove(event, contact) {
+  if (!isMobileLayout.value || !contact?.userId) return
+  move(contact.userId, event)
+}
+
+function onContactTouchEnd(contact) {
+  if (!isMobileLayout.value || !contact?.userId) return
+  end(contact.userId)
+}
 </script>
 
 <template>
@@ -224,37 +266,54 @@ function nameOf(o) {
         <article
           v-for="c in store.contacts"
           :key="c.userId"
-          class="row"
+          class="contact-swipe-shell"
         >
-          <AuthenticatedAvatar
-            :avatar="c.avatar"
-            :fallback="nameOf(c).slice(0, 1).toUpperCase()"
-            :size="44"
-          />
-          <div class="row-meta">
-            <p class="row-title">{{ nameOf(c) }}</p>
-            <p class="row-sub">
-              <span v-if="c.username && c.username !== c.nickname">@{{ c.username }}</span>
-              <span v-if="c.relationStatus === 'PENDING_SENT'" class="status-pending">
-                · {{ relationLabel(c.relationStatus) }}
-              </span>
-            </p>
-          </div>
-          <div class="row-actions">
-            <button
-              v-if="c.relationStatus === 'FRIEND'"
-              type="button"
-              class="btn-primary-outline"
-              :disabled="store.submitting"
-              :title="`与 ${nameOf(c)} 聊天`"
-              @click="openContactChat(c)"
-            >💬 聊天</button>
-            <button
-              type="button"
-              class="btn-danger-outline"
-              :disabled="store.submitting"
-              @click="askRemoveContact(c)"
-            >{{ c.relationStatus === 'PENDING_SENT' ? '撤销请求' : '删除' }}</button>
+          <button
+            v-if="isMobileLayout"
+            type="button"
+            class="swipe-delete-action"
+            :class="{ pending: c.relationStatus === 'PENDING_SENT', open: isOpen(c.userId) }"
+            @click="askRemoveContact(c)"
+          >{{ c.relationStatus === 'PENDING_SENT' ? '撤销请求' : '删除' }}</button>
+          <div
+            class="row"
+            :style="isMobileLayout ? { transform: `translateX(${offsetOf(c.userId)}px)` } : undefined"
+            @touchstart.passive="onContactTouchStart($event, c)"
+            @touchmove.passive="onContactTouchMove($event, c)"
+            @touchend="onContactTouchEnd(c)"
+            @touchcancel="onContactTouchEnd(c)"
+          >
+            <AuthenticatedAvatar
+              :avatar="c.avatar"
+              :fallback="nameOf(c).slice(0, 1).toUpperCase()"
+              :size="44"
+            />
+            <div class="row-meta">
+              <p class="row-title">{{ nameOf(c) }}</p>
+              <p class="row-sub">
+                <span v-if="c.username && c.username !== c.nickname">@{{ c.username }}</span>
+                <span v-if="c.relationStatus === 'PENDING_SENT'" class="status-pending">
+                  · {{ relationLabel(c.relationStatus) }}
+                </span>
+              </p>
+            </div>
+            <div class="row-actions">
+              <button
+                v-if="c.relationStatus === 'FRIEND'"
+                type="button"
+                class="btn-primary-outline"
+                :disabled="store.submitting"
+                :title="`与 ${nameOf(c)} 聊天`"
+                @click="openContactChat(c)"
+              >💬 聊天</button>
+              <button
+                v-if="!isMobileLayout"
+                type="button"
+                class="btn-danger-outline"
+                :disabled="store.submitting"
+                @click="askRemoveContact(c)"
+              >{{ c.relationStatus === 'PENDING_SENT' ? '撤销请求' : '删除' }}</button>
+            </div>
           </div>
         </article>
       </section>
@@ -436,7 +495,26 @@ function nameOf(o) {
   flex-direction: column;
   gap: 8px;
 }
+.contact-swipe-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+.swipe-delete-action {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 96px;
+  border: none;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.swipe-delete-action.pending {
+  background: #f59e0b;
+}
 .row {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 12px;
@@ -445,6 +523,7 @@ function nameOf(o) {
   background: var(--color-surface);
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-lg);
+  transition: transform 0.16s ease;
 }
 .row-meta {
   min-width: 0;

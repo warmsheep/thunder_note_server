@@ -106,9 +106,26 @@ const menuItems = computed(() => {
   if (!menuTarget.value) return []
   return [
     { key: 'copy', label: '复制', icon: '📋' },
+    {
+      key: 'download',
+      label: '保存到本地',
+      icon: '💾',
+      disabled: !isMediaItem(menuTarget.value) || !menuTarget.value.mediaUrl
+    },
     { key: 'remove', label: '取消收藏', icon: '☆', danger: true }
   ]
 })
+
+async function downloadMedia(item) {
+  if (!item?.mediaUrl) return
+  const { triggerDownload } = await import('../api/files')
+  try {
+    await triggerDownload(item.mediaUrl, item.fileName || 'download')
+    showSuccess('已开始下载')
+  } catch (e) {
+    showError(e?.serverMessage || e?.message || '下载失败')
+  }
+}
 
 function openMenuAt(item, clientX, clientY) {
   if (!item) return
@@ -141,9 +158,9 @@ function onItemTouchStart(e, item) {
   if (!item || item.messageId == null) return
   const t = e.touches && e.touches[0]
   if (!t) return
+  clearLongPress()
   pressItem = item
   pressStart = { x: t.clientX, y: t.clientY }
-  clearLongPress()
   longPressTimer = setTimeout(() => {
     longPressTimer = null
     if (pressItem) {
@@ -190,6 +207,8 @@ async function onMenuSelect(key) {
     } catch (e) {
       showError(e?.message || '复制失败')
     }
+  } else if (key === 'download') {
+    await downloadMedia(item)
   } else if (key === 'remove') {
     handleRemove(item)
   }

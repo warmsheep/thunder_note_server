@@ -230,11 +230,22 @@ watch(
   }
 )
 
+// D1-W24-05 草稿保留所需：父级（ChatView）通过 ref 读写文本草稿
+function getText() {
+  return text.value
+}
+function setText(value) {
+  text.value = value == null ? '' : String(value)
+}
+
 defineExpose({
   reset,
   focus: () => textareaEl.value?.focus(),
   // 外部（如 ChatView、CardEditorDialog）可调用追加附件
-  addFiles
+  addFiles,
+  // 草稿读写
+  getText,
+  setText
 })
 </script>
 

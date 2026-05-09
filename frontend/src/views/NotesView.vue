@@ -4,7 +4,9 @@ import { useRouter } from 'vue-router'
 import { useFlashNotesStore } from '../stores/flashNotes'
 import { useChatStore } from '../stores/chat'
 import { useAuthStore } from '../stores/auth'
+import { useSearchStore } from '../stores/search'
 import { useToast } from '../composables/useToast'
+import { useSwipeReveal } from '../composables/useSwipeReveal'
 import { uploadFile } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
 import LoadingState from '../components/LoadingState.vue'
@@ -30,6 +32,7 @@ import MessageActionMenu from '../components/MessageActionMenu.vue'
 const store = useFlashNotesStore()
 const chatStore = useChatStore()
 const authStore = useAuthStore()
+const searchStore = useSearchStore()
 const { showSuccess, showError } = useToast()
 const router = useRouter()
 
@@ -37,6 +40,17 @@ const INBOX_FLASH_NOTE_ID = -1
 
 const currentUserId = computed(() => authStore.user?.id ?? null)
 const isMobileLayout = ref(false)
+const { begin, move, end, close, offsetOf, isOpen } = useSwipeReveal()
+const inlineSearchOpen = ref(false)
+const inlineSearchInput = ref('')
+const actionMenuOpen = ref(false)
+const actionMenuX = ref(0)
+const actionMenuY = ref(0)
+const actionMenuTarget = ref(null)
+const LONG_PRESS_MS = 600
+const LONG_PRESS_TOLERANCE_PX = 8
+let longPressTimer = null
+let pressStart = { x: 0, y: 0 }
 
 function updateLayout() {
   if (typeof window === 'undefined' || !window.matchMedia) {
@@ -54,6 +68,10 @@ if (typeof window !== 'undefined' && window.matchMedia) {
   }
 }
 onBeforeUnmount(() => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
   if (mqList && typeof mqList.removeEventListener === 'function') {
     mqList.removeEventListener('change', updateLayout)
   }
@@ -67,6 +85,17 @@ function openChat(note) {
 const editDialog = ref({ open: false, mode: 'create', initial: {}, target: null })
 const deleteDialog = ref({ open: false, target: null, busy: false })
 const showHidden = ref(false)
+const noteActionMenuItems = computed(() => {
+  const note = actionMenuTarget.value
+  if (!note) return []
+  return [
+    { key: 'edit', label: '编辑', icon: '✏️' },
+    { key: 'pin', label: note.pinned ? '取消置顶' : '置顶', icon: note.pinned ? '📍' : '📌' },
+    { key: 'hide', label: note.hidden ? '取消隐藏' : '隐藏', icon: '🙈' },
+    { key: 'delete', label: '删除', icon: '🗑', danger: true }
+  ]
+})
+const showingSearchResults = computed(() => inlineSearchOpen.value && searchStore.hasSearched)
 
 onMounted(() => {
   if (!store.loaded) {
@@ -137,6 +166,7 @@ async function toggleHide(note) {
 }
 
 function askDelete(note) {
+  close(note?.id)
   deleteDialog.value = { open: true, target: note, busy: false }
 }
 
@@ -155,6 +185,92 @@ async function confirmDelete() {
 
 function cancelDelete() {
   deleteDialog.value = { open: false, target: null, busy: false }
+}
+
+function openInlineSearch() {
+  inlineSearchOpen.value = true
+}
+
+function closeInlineSearch() {
+  inlineSearchOpen.value = false
+  inlineSearchInput.value = ''
+  searchStore.clear()
+}
+
+async function runInlineSearch() {
+  searchStore.setQuery(inlineSearchInput.value)
+  await searchStore.search(inlineSearchInput.value)
+}
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+function openActionMenu(note, x, y) {
+  actionMenuTarget.value = note
+  actionMenuX.value = Math.round(x)
+  actionMenuY.value = Math.round(y)
+  actionMenuOpen.value = true
+}
+
+function handleNoteContextMenu(event, note) {
+  event.preventDefault()
+  openActionMenu(note, event.clientX, event.clientY)
+}
+
+function onNoteTouchStart(event, note) {
+  if (!isMobileLayout.value || !note?.id) return
+  begin(note.id, event, event.currentTarget?.offsetWidth || 240)
+  const touch = event.touches?.[0]
+  if (!touch) return
+  pressStart = { x: touch.clientX, y: touch.clientY }
+  clearLongPress()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    openActionMenu(note, pressStart.x, pressStart.y)
+  }, LONG_PRESS_MS)
+}
+
+function onNoteTouchMove(event, note) {
+  if (!isMobileLayout.value || !note?.id) return
+  move(note.id, event)
+  if (!longPressTimer) return
+  const touch = event.touches?.[0]
+  if (!touch) return
+  const dx = Math.abs(touch.clientX - pressStart.x)
+  const dy = Math.abs(touch.clientY - pressStart.y)
+  if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) {
+    clearLongPress()
+  }
+}
+
+function onNoteTouchEnd(note) {
+  clearLongPress()
+  if (!isMobileLayout.value || !note?.id) return
+  end(note.id)
+}
+
+async function onNoteActionSelect(key) {
+  const note = actionMenuTarget.value
+  if (!note) return
+  if (key === 'edit') {
+    openEdit(note)
+  } else if (key === 'pin') {
+    await togglePin(note)
+  } else if (key === 'hide') {
+    await toggleHide(note)
+  } else if (key === 'delete') {
+    askDelete(note)
+  }
+}
+
+function openSearchConversation(item) {
+  const flashNoteId = item?.flashNote?.id
+  if (flashNoteId == null) return
+  openChat({ id: flashNoteId })
 }
 
 function formatTime(iso) {
@@ -301,8 +417,29 @@ void currentUserId
     <div class="page-toolbar">
       <span class="page-stats" v-if="store.loaded">共 {{ store.visibleCount }} 条</span>
       <span class="page-stats" v-else></span>
-      <button type="button" class="btn-create" :disabled="store.submitting" @click="openCreate">+ 新建闪记</button>
+      <div class="toolbar-actions">
+        <button
+          type="button"
+          class="btn-search-toggle"
+          :class="{ active: inlineSearchOpen }"
+          @click="inlineSearchOpen ? closeInlineSearch() : openInlineSearch()"
+        >🔍</button>
+        <button type="button" class="btn-create" :disabled="store.submitting" @click="openCreate">+ 新建闪记</button>
+      </div>
     </div>
+
+    <form v-if="inlineSearchOpen" class="inline-search" @submit.prevent="runInlineSearch">
+      <input
+        v-model="inlineSearchInput"
+        type="search"
+        class="inline-search-input"
+        placeholder="搜索闪记名称或消息内容"
+      />
+      <button type="submit" class="inline-search-btn" :disabled="searchStore.loading || !inlineSearchInput.trim()">
+        {{ searchStore.loading ? '搜索中...' : '搜索' }}
+      </button>
+      <button type="button" class="inline-search-close" @click="closeInlineSearch">关闭</button>
+    </form>
 
     <LoadingState v-if="isInitialLoading" text="加载闪记中..." />
     <ErrorState
@@ -317,6 +454,38 @@ void currentUserId
         title="还没有闪记"
         description="点右上角“新建闪记”开始记录"
       />
+      <template v-else-if="showingSearchResults">
+        <section class="group">
+          <header class="group-header">闪记名称命中（{{ searchStore.noteHits.length }}）</header>
+          <article
+            v-for="(item, idx) in searchStore.noteHits"
+            :key="`search-note-${item.flashNote?.id ?? idx}`"
+            class="search-hit"
+            @click="openSearchConversation(item)"
+          >
+            <span class="note-icon" aria-hidden="true">{{ item.flashNote?.icon || '⚡' }}</span>
+            <div class="note-meta">
+              <p class="note-title">{{ item.flashNote?.title || '(未命名闪记)' }}</p>
+              <p class="note-preview">{{ item.flashNote?.latestMessage || '点击进入会话' }}</p>
+            </div>
+          </article>
+        </section>
+        <section class="group" v-if="searchStore.messageHits.length">
+          <header class="group-header">消息内容命中（{{ searchStore.messageHits.length }}）</header>
+          <article
+            v-for="(item, idx) in searchStore.messageHits"
+            :key="`search-msg-${item.flashNote?.id ?? idx}`"
+            class="search-hit"
+            @click="openSearchConversation(item)"
+          >
+            <span class="note-icon" aria-hidden="true">{{ item.flashNote?.icon || '⚡' }}</span>
+            <div class="note-meta">
+              <p class="note-title">{{ item.flashNote?.title || '(未命名闪记)' }}</p>
+              <p class="note-preview">{{ item.matchedMessages?.[0]?.snippet || '点击进入会话' }}</p>
+            </div>
+          </article>
+        </section>
+      </template>
       <template v-else>
         <section v-if="store.inboxNote" class="group">
           <header class="group-header">收集箱</header>
@@ -335,23 +504,40 @@ void currentUserId
           <article
             v-for="note in store.pinnedList"
             :key="note.id"
-            class="note-item clickable"
-            @click="openChat(note)"
+            class="note-swipe-shell"
           >
-            <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
-            <div class="note-meta">
-              <p class="note-title">
-                <span class="badge-pinned" aria-hidden="true">📌</span>
-                {{ note.title }}
-              </p>
-              <p class="note-preview">{{ note.latestMessage || '暂无消息' }}</p>
-            </div>
-            <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
-            <div class="note-actions">
-              <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
-              <button type="button" class="action" @click.stop="togglePin(note)">取消置顶</button>
-              <button type="button" class="action" @click.stop="toggleHide(note)">隐藏</button>
-              <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
+            <button
+              v-if="isMobileLayout"
+              type="button"
+              class="swipe-delete-action"
+              :class="{ open: isOpen(note.id) }"
+              @click="askDelete(note)"
+            >删除</button>
+            <div
+              class="note-item clickable"
+              :style="isMobileLayout ? { transform: `translateX(${offsetOf(note.id)}px)` } : undefined"
+              @click="openChat(note)"
+              @contextmenu="handleNoteContextMenu($event, note)"
+              @touchstart.passive="onNoteTouchStart($event, note)"
+              @touchmove.passive="onNoteTouchMove($event, note)"
+              @touchend="onNoteTouchEnd(note)"
+              @touchcancel="onNoteTouchEnd(note)"
+            >
+              <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
+              <div class="note-meta">
+                <p class="note-title">
+                  <span class="badge-pinned" aria-hidden="true">📌</span>
+                  {{ note.title }}
+                </p>
+                <p class="note-preview">{{ note.latestMessage || '暂无消息' }}</p>
+              </div>
+              <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
+              <div class="note-actions" v-if="!isMobileLayout">
+                <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
+                <button type="button" class="action" @click.stop="togglePin(note)">取消置顶</button>
+                <button type="button" class="action" @click.stop="toggleHide(note)">隐藏</button>
+                <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
+              </div>
             </div>
           </article>
         </section>
@@ -361,20 +547,37 @@ void currentUserId
           <article
             v-for="note in store.normalList"
             :key="note.id"
-            class="note-item clickable"
-            @click="openChat(note)"
+            class="note-swipe-shell"
           >
+            <button
+              v-if="isMobileLayout"
+              type="button"
+              class="swipe-delete-action"
+              :class="{ open: isOpen(note.id) }"
+              @click="askDelete(note)"
+            >删除</button>
+            <div
+              class="note-item clickable"
+              :style="isMobileLayout ? { transform: `translateX(${offsetOf(note.id)}px)` } : undefined"
+              @click="openChat(note)"
+              @contextmenu="handleNoteContextMenu($event, note)"
+              @touchstart.passive="onNoteTouchStart($event, note)"
+              @touchmove.passive="onNoteTouchMove($event, note)"
+              @touchend="onNoteTouchEnd(note)"
+              @touchcancel="onNoteTouchEnd(note)"
+            >
             <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
             <div class="note-meta">
               <p class="note-title">{{ note.title }}</p>
               <p class="note-preview">{{ note.latestMessage || '暂无消息' }}</p>
             </div>
             <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
-            <div class="note-actions">
+            <div class="note-actions" v-if="!isMobileLayout">
               <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
               <button type="button" class="action" @click.stop="togglePin(note)">置顶</button>
               <button type="button" class="action" @click.stop="toggleHide(note)">隐藏</button>
               <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
+            </div>
             </div>
           </article>
         </section>
@@ -388,19 +591,36 @@ void currentUserId
             <article
               v-for="note in store.hiddenList"
               :key="note.id"
-              class="note-item dimmed clickable"
-              @click="openChat(note)"
+              class="note-swipe-shell"
             >
+              <button
+                v-if="isMobileLayout"
+                type="button"
+                class="swipe-delete-action"
+                :class="{ open: isOpen(note.id) }"
+                @click="askDelete(note)"
+              >删除</button>
+              <div
+                class="note-item dimmed clickable"
+                :style="isMobileLayout ? { transform: `translateX(${offsetOf(note.id)}px)` } : undefined"
+                @click="openChat(note)"
+                @contextmenu="handleNoteContextMenu($event, note)"
+                @touchstart.passive="onNoteTouchStart($event, note)"
+                @touchmove.passive="onNoteTouchMove($event, note)"
+                @touchend="onNoteTouchEnd(note)"
+                @touchcancel="onNoteTouchEnd(note)"
+              >
               <div class="note-icon" aria-hidden="true">{{ note.icon || '⚡' }}</div>
               <div class="note-meta">
                 <p class="note-title">{{ note.title }}</p>
                 <p class="note-preview">{{ note.latestMessage || '暂无消息' }}</p>
               </div>
               <span class="note-time">{{ formatTime(note.updatedAt) }}</span>
-              <div class="note-actions">
+              <div class="note-actions" v-if="!isMobileLayout">
                 <button type="button" class="action" @click.stop="openEdit(note)">编辑</button>
                 <button type="button" class="action" @click.stop="toggleHide(note)">取消隐藏</button>
                 <button type="button" class="action danger" @click.stop="askDelete(note)">删除</button>
+              </div>
               </div>
             </article>
           </template>
@@ -449,6 +669,14 @@ void currentUserId
       @select="onFabMenuSelect"
     />
 
+    <MessageActionMenu
+      v-model:open="actionMenuOpen"
+      :x="actionMenuX"
+      :y="actionMenuY"
+      :items="noteActionMenuItems"
+      @select="onNoteActionSelect"
+    />
+
     <!-- 隐藏的多用 file input：按现场设置 accept / capture -->
     <input
       ref="hiddenFileInput"
@@ -484,9 +712,26 @@ void currentUserId
   justify-content: space-between;
   gap: 12px;
 }
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .page-stats {
   font-size: 13px;
   color: var(--color-text-secondary);
+}
+.btn-search-toggle {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.btn-search-toggle.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 .btn-create {
   padding: 8px 16px;
@@ -513,6 +758,49 @@ void currentUserId
   border: 1px solid var(--color-divider);
   overflow: hidden;
 }
+.inline-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+.inline-search-input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.inline-search-btn,
+.inline-search-close {
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.inline-search-btn {
+  background: var(--color-primary);
+  color: #fff;
+}
+.inline-search-close {
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+.note-swipe-shell {
+  position: relative;
+  overflow: hidden;
+}
+.swipe-delete-action {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 96px;
+  border: none;
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 600;
+}
 .group-header {
   padding: 10px 16px;
   font-size: 13px;
@@ -534,6 +822,7 @@ void currentUserId
 }
 
 .note-item {
+  position: relative;
   display: grid;
   grid-template-columns: 40px 1fr auto;
   grid-template-rows: auto auto;
@@ -544,6 +833,7 @@ void currentUserId
   gap: 8px 12px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--color-divider);
+  transition: transform 0.16s ease;
 }
 .note-item:last-child {
   border-bottom: none;
@@ -632,6 +922,18 @@ void currentUserId
 .action.danger:hover {
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+.search-hit {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-divider);
+  cursor: pointer;
+}
+.search-hit:last-child {
+  border-bottom: none;
 }
 
 @media (max-width: 768px) {

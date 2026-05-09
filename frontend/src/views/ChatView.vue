@@ -16,9 +16,10 @@ import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
 import CardEditorDialog from '../components/CardEditorDialog.vue'
-import { uploadFile } from '../api/files'
+import { uploadFile, triggerDownload } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
 import { useChatScroll } from '../composables/useChatScroll'
+import { loadDraft, saveDraft, clearDraft } from '../composables/useChatDraft'
 
 // D1-W6 / D1-W20 单条会话页（独立顶级路由）。
 // W20 后同一个 ChatView 同时承担两种会话身份：
@@ -45,6 +46,7 @@ const { showSuccess, showError } = useToast()
 const composerRef = ref(null)
 const uploadProgress = ref(0)
 const uploading = ref(false)
+const draftLoadedKey = ref(null)
 
 // W20 从路由参数推出会话身份。
 // route.name === 'contact-chat' 时走 peerUserId 模式；
@@ -117,6 +119,7 @@ const headerIcon = computed(() => {
 const peerAvatar = computed(() => peerContact.value?.avatar || null)
 
 const currentUserId = computed(() => authStore.user?.id ?? null)
+const draftScope = computed(() => `user:${currentUserId.value ?? 'anon'}`)
 
 const initialLoading = computed(() => chatStore.loading && chatStore.messages.length === 0)
 const showError_ = computed(() => Boolean(chatStore.error) && chatStore.messages.length === 0)
@@ -235,6 +238,36 @@ async function reload() {
   }
 }
 
+function restoreDraftIfNeeded() {
+  const key = conversationKey.value
+  if (!key || !composerRef.value || draftLoadedKey.value === key) return
+  composerRef.value.setText(loadDraft(key, draftScope.value))
+  draftLoadedKey.value = key
+}
+
+// D1-W24-05 持久化当前 composer 里的未发送文本到指定 conversationKey
+// keyOverride：watch 切换会话时，`conversationKey` computed 已经指向新路由，
+// 这里必须显式传入「切换前」的 previousKey，否则会把旧草稿写到新会话的槽位，
+// 并在下一帧被 restoreDraftIfNeeded 反向污染成当前输入。
+function persistCurrentDraft(keyOverride) {
+  const key = keyOverride ?? conversationKey.value
+  if (!key) return
+  saveDraft(key, composerRef.value?.getText?.() || '', draftScope.value)
+}
+
+// 根据 route.name + 路由参数反推 conversationKey；watch 的 prev 快照里要用到
+function deriveConversationKey(name, flashNoteIdParam, peerUserIdParam) {
+  if (name === 'contact-chat') {
+    const pid = Number(peerUserIdParam)
+    return Number.isFinite(pid) ? `peer:${pid}` : null
+  }
+  if (name === 'chat') {
+    const fid = Number(flashNoteIdParam)
+    return Number.isFinite(fid) ? `fn:${fid}` : null
+  }
+  return null
+}
+
 onMounted(() => {
   // 列表 store 没加载时顺手拉一下，便于头部显示真实 title/icon
   if (!flashNotesStore.loaded) {
@@ -249,11 +282,15 @@ onMounted(() => {
     contactsStore.fetchContacts({ silent: true }).catch(() => {})
   }
   reload()
+  nextTick(() => {
+    restoreDraftIfNeeded()
+  })
 })
 
 onBeforeUnmount(() => {
   // W19-02 离开会话前记下当前 scrollTop（按 flashNoteId 隔离）
   rememberScroll()
+  persistCurrentDraft()
   chatStore.reset()
 })
 
@@ -270,8 +307,18 @@ watch(
       || String(prevPeer) !== String(nextPeer)
     if (prevName != null && changed) {
       rememberScroll()
+      // 用 prev 快照算出切换前的 conversationKey；如果直接读
+      // conversationKey.value 会拿到新路由的 key（见 persistCurrentDraft 注释）
+      const previousKey = deriveConversationKey(prevName, prevFn, prevPeer)
+      if (previousKey) {
+        persistCurrentDraft(previousKey)
+      }
     }
+    draftLoadedKey.value = null
     reload()
+    nextTick(() => {
+      restoreDraftIfNeeded()
+    })
   }
 )
 
@@ -298,6 +345,7 @@ async function handleSend(payload) {
         currentUserId: currentUserId.value,
         media: null
       })
+      clearDraft(conversationKey.value, draftScope.value)
       composerRef.value?.reset()
       await nextTick()
       scrollToBottom({ smooth: true })
@@ -341,6 +389,7 @@ async function handleSend(payload) {
       sentCount += 1
       uploadProgress.value = 0
     }
+    clearDraft(conversationKey.value, draftScope.value)
     composerRef.value?.reset()
     await nextTick()
     scrollToBottom({ smooth: true })
@@ -383,6 +432,16 @@ async function handleToggleFavorite(message) {
     }
   } catch (e) {
     showError(e?.serverMessage || e?.message || '操作失败')
+  }
+}
+
+async function handleDownloadMessage(message) {
+  if (!message?.mediaUrl) return
+  try {
+    await triggerDownload(message.mediaUrl, message.fileName || 'download')
+    showSuccess('已开始下载')
+  } catch (e) {
+    showError(e?.serverMessage || e?.message || '下载失败')
   }
 }
 
@@ -698,6 +757,7 @@ function onBubbleForwardSingle(payload) {
           @delete="askDeleteSingle"
           @retry="handleRetry"
           @toggle-favorite="handleToggleFavorite"
+          @download="handleDownloadMessage"
           @open-card="openCardDetail"
           @forward-single="onBubbleForwardSingle"
           @enter-select-with="enterSelectModeWith"
