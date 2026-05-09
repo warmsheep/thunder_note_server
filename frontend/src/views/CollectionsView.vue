@@ -23,8 +23,13 @@ const { showSuccess, showError } = useToast()
 
 const editDialog = ref({ open: false, mode: 'create', initial: {}, target: null })
 const deleteDialog = ref({ open: false, target: null, busy: false })
-const expanded = ref(new Set()) // collection ids
-const uncatExpanded = ref(false)
+// D1-W28-10 默认全部展开：语义反转为「折叠集」。初始空集合 = 全部展开，
+// 点击一项才会加入折叠集。未分类同样默认展开。
+const collapsed = ref(new Set()) // 折叠状态下的 collection id
+const uncatCollapsed = ref(false)
+function isExpanded(id) {
+  return !collapsed.value.has(id)
+}
 
 onMounted(() => {
   if (!collectionsStore.loaded) {
@@ -108,13 +113,13 @@ function cancelDelete() {
 }
 
 function toggleExpand(id) {
-  const next = new Set(expanded.value)
+  const next = new Set(collapsed.value)
   if (next.has(id)) {
     next.delete(id)
   } else {
     next.add(id)
   }
-  expanded.value = next
+  collapsed.value = next
 }
 
 function notesOfCollection(c) {
@@ -167,13 +172,13 @@ function openChat(note) {
                 <p v-if="c.description" class="collection-desc">{{ c.description }}</p>
               </div>
               <span class="collection-count">{{ notesOfCollection(c).length }} 条</span>
-              <span class="caret" aria-hidden="true">{{ expanded.has(c.id) ? '▾' : '▸' }}</span>
+              <span class="caret" aria-hidden="true">{{ isExpanded(c.id) ? '▾' : '▸' }}</span>
               <div class="collection-actions">
                 <button type="button" class="action" @click.stop="openEdit(c)">编辑</button>
                 <button type="button" class="action danger" @click.stop="askDelete(c)">删除</button>
               </div>
             </div>
-            <div v-if="expanded.has(c.id)" class="collection-notes">
+            <div v-if="isExpanded(c.id)" class="collection-notes">
               <p v-if="notesOfCollection(c).length === 0" class="empty-line">该合集下还没有闪记</p>
               <button
                 v-for="n in notesOfCollection(c)"
@@ -191,11 +196,11 @@ function openChat(note) {
         </section>
 
         <section v-if="grouped.uncategorized.length" class="group">
-          <header class="group-header collapsible" @click="uncatExpanded = !uncatExpanded">
+          <header class="group-header collapsible" @click="uncatCollapsed = !uncatCollapsed">
             <span>未分类（{{ grouped.uncategorized.length }}）</span>
-            <span class="caret">{{ uncatExpanded ? '▾' : '▸' }}</span>
+            <span class="caret">{{ uncatCollapsed ? '▸' : '▾' }}</span>
           </header>
-          <div v-if="uncatExpanded" class="collection-notes flat">
+          <div v-if="!uncatCollapsed" class="collection-notes flat">
             <button
               v-for="n in grouped.uncategorized"
               :key="n.id"
