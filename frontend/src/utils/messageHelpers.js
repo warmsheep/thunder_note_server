@@ -3,6 +3,26 @@
 // 收集箱固定 flashNoteId
 export const INBOX_FLASH_NOTE_ID = -1
 
+// 后端为媒体消息自动写入的占位 content（参见 common/constant/MediaType.java）。
+// 这些占位仅用于在闪记列表 / 收藏列表的"摘要"位置展示，
+// 真正的消息气泡 / 媒体卡片不应再把它们当作 caption 显示，否则会出现
+// 「图片缩略图 + 下方又来一行 [图片]」的双重标签。
+const MEDIA_PLACEHOLDER_PATTERN = /^\s*\[(图片|视频|语音|音频|文件|附件|卡片消息)\]\s*$/
+
+export function isMediaPlaceholderContent(content) {
+  if (content == null) return false
+  return MEDIA_PLACEHOLDER_PATTERN.test(String(content))
+}
+
+// 在媒体气泡 / 收藏卡片场景下取真正的 caption：占位文本 → 空字符串
+export function captionForMediaContent(content) {
+  if (content == null) return ''
+  const s = String(content).trim()
+  if (!s) return ''
+  if (isMediaPlaceholderContent(s)) return ''
+  return s
+}
+
 export function isInboxFlashNoteId(value) {
   return Number(value) === INBOX_FLASH_NOTE_ID
 }

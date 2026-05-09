@@ -3,9 +3,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFavoritesStore } from '../stores/favorites'
 import { useToast } from '../composables/useToast'
+import { renderMarkdown } from '../utils/markdownRenderer'
+import { captionForMediaContent } from '../utils/messageHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import EmptyState from '../components/EmptyState.vue'
+import MediaPreview from '../components/MediaPreview.vue'
 
 // D1-W8 收藏列表
 // - 拉 favorites/list 展示已收藏消息（W8-01）
@@ -54,15 +57,28 @@ function openOrigin(item) {
   router.push({ name: 'chat', params: { flashNoteId: String(item.flashNoteId) } })
 }
 
-function previewOf(item) {
-  if (!item) return ''
-  if (item.payload && item.payload.cardType) {
-    return `[卡片] ${item.payload.title || item.payload.cardType}`
-  }
-  if (item.mediaType) {
-    return `[${item.mediaType}]${item.fileName ? ' ' + item.fileName : ''}`
-  }
-  return item.content || ''
+function isCardItem(item) {
+  return Boolean(item && item.payload && item.payload.cardType)
+}
+
+function isMediaItem(item) {
+  return Boolean(item && item.mediaType) && !isCardItem(item)
+}
+
+// 卡片摘要：[卡片] 标题
+function cardSummary(item) {
+  if (!item || !item.payload) return ''
+  return `[卡片] ${item.payload.title || item.payload.cardType || ''}`
+}
+
+// 媒体气泡下方的 caption：过滤后端 [图片] / [视频] / [文件] 占位
+function captionFor(item) {
+  return captionForMediaContent(item && item.content)
+}
+
+// 文本类消息：复用 chat 页同款 markdown + DOMPurify 渲染
+function renderedTextHtml(item) {
+  return renderMarkdown(item && item.content)
 }
 
 function timeText(iso) {
@@ -107,7 +123,21 @@ function timeText(iso) {
             <span class="fn-icon" aria-hidden="true">{{ item.flashNoteIcon || '⚡' }}</span>
             <span class="fn-title">{{ item.flashNoteTitle || '未知闪记' }}</span>
           </div>
-          <p class="fav-content">{{ previewOf(item) }}</p>
+
+          <!-- 卡片：仅摘要 -->
+          <p v-if="isCardItem(item)" class="fav-content">{{ cardSummary(item) }}</p>
+
+          <!-- 媒体：复用 MediaPreview（图片/视频/音频缩略图，PDF / 文本 / Office 文件卡片） -->
+          <template v-else-if="isMediaItem(item)">
+            <div class="fav-media" @click.stop>
+              <MediaPreview :message="item" />
+            </div>
+            <p v-if="captionFor(item)" class="fav-caption">{{ captionFor(item) }}</p>
+          </template>
+
+          <!-- 纯文本：与 chat 页同款 markdown + DOMPurify 渲染（防止显示成原始 <a>/<strong> 标签） -->
+          <div v-else class="fav-content markdown-body" v-html="renderedTextHtml(item)"></div>
+
           <div class="fav-meta">
             <span class="fav-time">{{ timeText(item.favoritedAt) }} 收藏</span>
             <button
@@ -185,6 +215,79 @@ function timeText(iso) {
   word-break: break-word;
   max-height: 5em;
   overflow: hidden;
+}
+
+/* 媒体收藏卡片：限制图片 / 视频 / 文件卡片在收藏列表里的最大尺寸，避免抢眼 */
+.fav-media {
+  display: flex;
+  flex-direction: column;
+  cursor: default;
+}
+.fav-media :deep(.media-image),
+.fav-media :deep(.media-video) {
+  max-height: 220px;
+}
+.fav-caption {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* markdown 文本收藏：与 chat 气泡同款排版（块级元素的 margin / list 缩进） */
+.markdown-body {
+  white-space: normal;
+  max-height: none;
+  overflow: visible;
+}
+.markdown-body :deep(p) { margin: 0; line-height: 1.5; }
+.markdown-body :deep(p) + :deep(p) { margin-top: 6px; }
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4),
+.markdown-body :deep(h5),
+.markdown-body :deep(h6) {
+  margin: 6px 0 4px 0;
+  font-weight: 600;
+  font-size: inherit;
+  line-height: 1.4;
+}
+.markdown-body :deep(h1) { font-size: 1.15em; }
+.markdown-body :deep(h2) { font-size: 1.1em; }
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) { margin: 4px 0; padding-left: 22px; }
+.markdown-body :deep(li) { margin: 2px 0; }
+.markdown-body :deep(code) {
+  background: rgba(0, 0, 0, 0.07);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+.markdown-body :deep(pre) {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 8px 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+.markdown-body :deep(pre code) { background: transparent; padding: 0; }
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid currentColor;
+  padding-left: 10px;
+  margin: 4px 0;
+  opacity: 0.85;
+}
+.markdown-body :deep(a) {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+.markdown-body :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 8px 0;
 }
 .fav-meta {
   display: flex;

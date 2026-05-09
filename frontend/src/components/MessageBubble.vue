@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { renderMarkdown } from '../utils/markdownRenderer'
+import { captionForMediaContent } from '../utils/messageHelpers'
 import MediaPreview from './MediaPreview.vue'
 
 // D1-W6 单条消息气泡
@@ -29,6 +30,10 @@ const isMedia = computed(() => Boolean(m.value.mediaType) && !isCard.value)
 
 // D1-W17-04 仅纯文本气泡渲染 markdown；媒体气泡的 caption 仍保留纯文本（避免 caption 内嵌过多结构）
 const renderedHtml = computed(() => renderMarkdown(m.value.content))
+
+// 媒体气泡 caption：把后端写入的 [图片] / [视频] / [语音] / [文件] 占位过滤掉
+// 否则缩略图下方会重复出现一行「[图片]」字样
+const mediaCaption = computed(() => captionForMediaContent(m.value.content))
 
 function timeText(iso) {
   if (!iso) return ''
@@ -63,7 +68,7 @@ function timeText(iso) {
         </template>
         <template v-else-if="isMedia">
           <MediaPreview :message="m" />
-          <p v-if="m.content" class="text caption">{{ m.content }}</p>
+          <p v-if="mediaCaption" class="text caption">{{ mediaCaption }}</p>
         </template>
         <template v-else>
           <!-- D1-W17-04 markdown 渲染（已经过 DOMPurify，安全 v-html） -->

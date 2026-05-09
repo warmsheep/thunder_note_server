@@ -9,7 +9,9 @@ import {
   createOptimisticMessage,
   mergeOlderRecords,
   buildInitialMessages,
-  replaceOptimisticByClientId
+  replaceOptimisticByClientId,
+  isMediaPlaceholderContent,
+  captionForMediaContent
 } from './messageHelpers'
 
 describe('inbox helpers', () => {
@@ -22,6 +24,34 @@ describe('inbox helpers', () => {
     expect(isInboxFlashNoteId(0)).toBe(false)
     expect(isInboxFlashNoteId(1)).toBe(false)
     expect(isInboxFlashNoteId(null)).toBe(false)
+  })
+})
+
+describe('media placeholder content', () => {
+  it('isMediaPlaceholderContent matches backend [图片]/[视频]/[语音]/[文件]/[卡片消息]', () => {
+    expect(isMediaPlaceholderContent('[图片]')).toBe(true)
+    expect(isMediaPlaceholderContent('[视频]')).toBe(true)
+    expect(isMediaPlaceholderContent('[语音]')).toBe(true)
+    expect(isMediaPlaceholderContent('[音频]')).toBe(true)
+    expect(isMediaPlaceholderContent('[文件]')).toBe(true)
+    expect(isMediaPlaceholderContent('[卡片消息]')).toBe(true)
+    expect(isMediaPlaceholderContent('  [图片]  ')).toBe(true) // 容忍前后空白
+  })
+  it('isMediaPlaceholderContent does NOT match real text containing [图片]', () => {
+    expect(isMediaPlaceholderContent('我刚发了 [图片]，请查收')).toBe(false)
+    expect(isMediaPlaceholderContent('[图片]这是说明')).toBe(false)
+    expect(isMediaPlaceholderContent('hello')).toBe(false)
+    expect(isMediaPlaceholderContent('')).toBe(false)
+    expect(isMediaPlaceholderContent(null)).toBe(false)
+    expect(isMediaPlaceholderContent(undefined)).toBe(false)
+  })
+  it('captionForMediaContent strips placeholder, keeps real captions', () => {
+    expect(captionForMediaContent('[图片]')).toBe('')
+    expect(captionForMediaContent('   [视频]   ')).toBe('')
+    expect(captionForMediaContent('hello world')).toBe('hello world')
+    expect(captionForMediaContent('  hello  ')).toBe('hello')
+    expect(captionForMediaContent('')).toBe('')
+    expect(captionForMediaContent(null)).toBe('')
   })
 })
 
