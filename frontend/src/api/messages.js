@@ -115,3 +115,48 @@ export function mergeMessages({ title, messageIds, flashNoteId = null, receiverI
     receiverId
   })
 }
+
+// D1-W22-03 直接基于客户端预上传的媒体文件创建 COMPOSITE 卡片消息
+// 后端约束：
+//   - title 必填（非空白），maxLength 50
+//   - items 1-9 条，每条 mediaUrl 必须是当前用户上传的对象（前缀 "<userId>/"）
+//   - flashNoteId / receiverId 二选一必填
+//   - 后端按 items 类型自动判 cardType（IMAGE_COLLECTION / VIDEO_COLLECTION / FILE_COLLECTION / COMPOSITE_CARD）
+export function createCompositeMessage({
+  title,
+  content = '',
+  flashNoteId = null,
+  receiverId = null,
+  items = []
+} = {}) {
+  if (!title || !String(title).trim()) {
+    return Promise.reject(new Error('title is required'))
+  }
+  if (String(title).trim().length > 50) {
+    return Promise.reject(new Error('title is too long'))
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return Promise.reject(new Error('items must be a non-empty array'))
+  }
+  if (items.length > 9) {
+    return Promise.reject(new Error('items size must be <= 9'))
+  }
+  if (flashNoteId == null && receiverId == null) {
+    return Promise.reject(new Error('flashNoteId or receiverId is required'))
+  }
+  const cleanItems = items.map((it) => ({
+    type: it.type || 'file',
+    mediaUrl: it.mediaUrl,
+    thumbnailUrl: it.thumbnailUrl || null,
+    fileName: it.fileName || null,
+    fileSize: it.fileSize != null ? Number(it.fileSize) : null,
+    content: it.content || null
+  }))
+  return apiClient.post('/api/messages/composite', {
+    title: String(title).trim(),
+    content: content == null ? '' : String(content),
+    flashNoteId,
+    receiverId,
+    items: cleanItems
+  })
+}

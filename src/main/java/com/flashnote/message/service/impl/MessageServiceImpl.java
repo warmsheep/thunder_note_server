@@ -13,6 +13,7 @@ import com.flashnote.common.response.ErrorCode;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
 import com.flashnote.file.service.FileService;
+import com.flashnote.message.dto.CompositeMessageRequest;
 import com.flashnote.message.entity.CardItem;
 import com.flashnote.message.entity.CardPayload;
 import com.flashnote.message.entity.Message;
@@ -271,6 +272,157 @@ public class MessageServiceImpl implements MessageService {
             }
         }
         
+        return compositeMsg;
+    }
+
+    /**
+     * D1-W22-03 直接基于客户端预上传的媒体文件创建 COMPOSITE 卡片消息。
+     *
+     * 与 {@link #mergeMessages} 的差异：
+     *   - merge 引用历史消息（CardItem.originalMsgId 非空）
+     *   - composite 直接落 CardItem（originalMsgId 留空），不产生中间消息
+     *
+     * 安全：
+     *   - title 必填，items 1~9 条
+     *   - flashNoteId / receiverId 二选一；非收集箱的 flashNote 必须属于当前用户
+     *   - 每个 item.mediaUrl 必须以 "<currentUserId>/" 开头（FileServiceImpl 的对象命名规则），
+     *     防止用户把别人的对象名拼成自己的卡片
+     */
+    @Override
+    public Message createCompositeMessage(String username, CompositeMessageRequest request) {
+        Long userId = currentUserService.getRequiredUserId(username);
+
+        if (request == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Request is required");
+        }
+        if (request.getTitle() == null || request.getTitle().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Title is required");
+        }
+        if (request.getTitle().length() > 50) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Title is too long");
+        }
+        if (request.getFlashNoteId() == null && request.getReceiverId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Flash note or receiver is required");
+        }
+        List<CompositeMessageRequest.Item> reqItems = request.getItems();
+        if (reqItems == null || reqItems.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "At least one media item is required");
+        }
+        if (reqItems.size() > 9) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "At most 9 media items are allowed");
+        }
+
+        Long targetFlashNoteId = request.getFlashNoteId();
+        Long targetReceiverId = request.getReceiverId();
+        if (targetFlashNoteId != null && targetFlashNoteId != NoteConstants.COLLECTION_BOX_NOTE_ID) {
+            FlashNote flashNote = flashNoteMapper.selectById(targetFlashNoteId);
+            if (flashNote == null || !userId.equals(flashNote.getUserId())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "Flash note not found");
+            }
+        }
+
+        // 校验每个 item 的 mediaUrl 是当前用户的对象（防止跨用户引用）
+        String userPrefix = userId + "/";
+        java.util.List<CardItem> items = new java.util.ArrayList<>();
+        Set<String> seenTypes = new HashSet<>();
+        for (CompositeMessageRequest.Item it : reqItems) {
+            if (it == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid item");
+            }
+            String type = it.getType();
+            String url = it.getMediaUrl();
+            if (url == null || url.isBlank()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Item mediaUrl is required");
+            }
+            if (!url.startsWith(userPrefix)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "Cannot reference another user's media");
+            }
+            if (type == null || type.isBlank()) {
+                type = "file";
+            }
+            seenTypes.add(type);
+
+            CardItem ci = new CardItem();
+            ci.setType(type);
+            ci.setUrl(url);
+            ci.setThumbnailUrl(it.getThumbnailUrl());
+            ci.setFileName(it.getFileName());
+            ci.setFileSize(it.getFileSize());
+            ci.setContent(it.getContent());
+            ci.setSenderId(userId);
+            ci.setRole("user");
+            items.add(ci);
+        }
+
+        // cardType 自动判定：单类型 → IMAGE_COLLECTION / VIDEO_COLLECTION / FILE_COLLECTION；混合 → COMPOSITE_CARD
+        String cardType;
+        if (seenTypes.size() == 1) {
+            String only = seenTypes.iterator().next();
+            if ("image".equalsIgnoreCase(only)) {
+                cardType = "IMAGE_COLLECTION";
+            } else if ("video".equalsIgnoreCase(only)) {
+                cardType = "VIDEO_COLLECTION";
+            } else {
+                cardType = "FILE_COLLECTION";
+            }
+        } else {
+            cardType = "COMPOSITE_CARD";
+        }
+
+        CardPayload payload = new CardPayload();
+        payload.setCardType(cardType);
+        payload.setTitle(request.getTitle());
+        payload.setItems(items);
+        // 摘要：优先正文 → 否则 "标题 等N项"
+        String summary;
+        if (request.getContent() != null && !request.getContent().isBlank()) {
+            summary = request.getContent().length() > 80
+                    ? request.getContent().substring(0, 80) + "..."
+                    : request.getContent();
+        } else {
+            summary = request.getTitle() + " 等" + items.size() + "项";
+        }
+        payload.setSummary(summary);
+
+        Message compositeMsg = new Message();
+        compositeMsg.setSenderId(userId);
+        Long receiverId = targetReceiverId;
+        if (targetFlashNoteId != null && targetFlashNoteId == NoteConstants.COLLECTION_BOX_NOTE_ID) {
+            receiverId = userId;
+        } else if (receiverId == null) {
+            receiverId = userId;
+        }
+        compositeMsg.setReceiverId(receiverId);
+        compositeMsg.setFlashNoteId(targetFlashNoteId);
+        compositeMsg.setRole("user");
+        compositeMsg.setReadStatus(false);
+        compositeMsg.setMediaType("COMPOSITE");
+        // content：优先 title；后端列表 / 收藏摘要会用到
+        compositeMsg.setContent(request.getTitle());
+        compositeMsg.setFileName(request.getTitle());
+        compositeMsg.setPayload(payload);
+
+        messageMapper.insert(compositeMsg);
+
+        if (compositeMsg.getFlashNoteId() != null && compositeMsg.getFlashNoteId() != NoteConstants.COLLECTION_BOX_NOTE_ID) {
+            FlashNote flashNote = flashNoteMapper.selectById(compositeMsg.getFlashNoteId());
+            if (flashNote != null && userId.equals(flashNote.getUserId())) {
+                flashNote.setContent(compositeMsg.getContent());
+                flashNoteMapper.updateById(flashNote);
+            }
+        }
+
+        SseEmitter receiverEmitter = emitterMap.get(compositeMsg.getReceiverId());
+        if (receiverEmitter != null) {
+            try {
+                receiverEmitter.send(SseEmitter.event()
+                        .name("message")
+                        .data(compositeMsg));
+            } catch (IOException ex) {
+                emitterMap.remove(compositeMsg.getReceiverId());
+            }
+        }
+
         return compositeMsg;
     }
 

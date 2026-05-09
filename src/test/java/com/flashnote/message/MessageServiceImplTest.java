@@ -8,6 +8,7 @@ import com.flashnote.common.service.CurrentUserService;
 import com.flashnote.file.service.FileService;
 import com.flashnote.flashnote.entity.FlashNote;
 import com.flashnote.flashnote.mapper.FlashNoteMapper;
+import com.flashnote.message.dto.CompositeMessageRequest;
 import com.flashnote.message.dto.MessageMergeRequest;
 import com.flashnote.message.entity.CardItem;
 import com.flashnote.message.entity.CardPayload;
@@ -25,7 +26,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -220,6 +220,141 @@ class MessageServiceImplTest {
         assertEquals("第一条", secondItem.getContent());
 
         verify(flashNoteMapper).updateById(any(FlashNote.class));
+    }
+
+    @Test
+    void createCompositeMessageBuildsCardWithUserOwnedItems() {
+        // D1-W22-03 单类型 image → IMAGE_COLLECTION
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
+        when(flashNoteMapper.selectById(7L)).thenReturn(buildFlashNote(7L, 1L));
+
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
+
+        CompositeMessageRequest req = new CompositeMessageRequest();
+        req.setTitle("旅行图集");
+        req.setFlashNoteId(7L);
+        CompositeMessageRequest.Item a = new CompositeMessageRequest.Item();
+        a.setType("image");
+        a.setMediaUrl("1/aaa.jpg");
+        a.setFileName("aaa.jpg");
+        CompositeMessageRequest.Item b = new CompositeMessageRequest.Item();
+        b.setType("image");
+        b.setMediaUrl("1/bbb.jpg");
+        b.setFileName("bbb.jpg");
+        req.setItems(List.of(a, b));
+
+        Message composite = service.createCompositeMessage("alice", req);
+
+        assertNotNull(composite);
+        assertEquals("COMPOSITE", composite.getMediaType());
+        assertEquals(7L, composite.getFlashNoteId());
+        assertEquals(1L, composite.getSenderId());
+        assertEquals(1L, composite.getReceiverId());
+        CardPayload payload = composite.getPayload();
+        assertNotNull(payload);
+        assertEquals("IMAGE_COLLECTION", payload.getCardType());
+        assertEquals("旅行图集", payload.getTitle());
+        assertEquals(2, payload.getItems().size());
+        assertEquals("1/aaa.jpg", payload.getItems().get(0).getUrl());
+        assertEquals("旅行图集 等2项", payload.getSummary());
+    }
+
+    @Test
+    void createCompositeMessageMixedTypesYieldsCompositeCard() {
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
+        when(flashNoteMapper.selectById(7L)).thenReturn(buildFlashNote(7L, 1L));
+
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
+
+        CompositeMessageRequest req = new CompositeMessageRequest();
+        req.setTitle("混合卡片");
+        req.setContent("简短摘要");
+        req.setFlashNoteId(7L);
+        CompositeMessageRequest.Item a = new CompositeMessageRequest.Item();
+        a.setType("image");
+        a.setMediaUrl("1/x.jpg");
+        CompositeMessageRequest.Item b = new CompositeMessageRequest.Item();
+        b.setType("file");
+        b.setMediaUrl("1/y.pdf");
+        req.setItems(List.of(a, b));
+
+        Message composite = service.createCompositeMessage("alice", req);
+        assertEquals("COMPOSITE_CARD", composite.getPayload().getCardType());
+        assertEquals("简短摘要", composite.getPayload().getSummary());
+    }
+
+    @Test
+    void createCompositeMessageRejectsForeignMediaUrl() {
+        // 安全校验：item.mediaUrl 必须以 "<userId>/" 开头
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        FlashNoteMapper flashNoteMapper = mock(FlashNoteMapper.class);
+        when(flashNoteMapper.selectById(7L)).thenReturn(buildFlashNote(7L, 1L));
+
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), flashNoteMapper,
+                mock(FileService.class), mockCurrentUserService());
+
+        CompositeMessageRequest req = new CompositeMessageRequest();
+        req.setTitle("非法引用");
+        req.setFlashNoteId(7L);
+        CompositeMessageRequest.Item a = new CompositeMessageRequest.Item();
+        a.setType("image");
+        a.setMediaUrl("99/other.jpg"); // 别人的 userId
+        req.setItems(List.of(a));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.createCompositeMessage("alice", req));
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
+        verify(messageMapper, never()).insert(any(Message.class));
+    }
+
+    @Test
+    void createCompositeMessageRejectsEmptyItemsAndOverflow() {
+        MessageMapper messageMapper = mock(MessageMapper.class);
+        MessageServiceImpl service = new MessageServiceImpl(
+                messageMapper, mockUserMapper(), mock(FlashNoteMapper.class),
+                mock(FileService.class), mockCurrentUserService());
+
+        // 空 items
+        CompositeMessageRequest empty = new CompositeMessageRequest();
+        empty.setTitle("t");
+        empty.setFlashNoteId(7L);
+        empty.setItems(List.of());
+        assertThrows(BusinessException.class,
+                () -> service.createCompositeMessage("alice", empty));
+
+        // 10 个 items 溢出
+        CompositeMessageRequest tooMany = new CompositeMessageRequest();
+        tooMany.setTitle("t");
+        tooMany.setFlashNoteId(7L);
+        List<CompositeMessageRequest.Item> items = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            CompositeMessageRequest.Item it = new CompositeMessageRequest.Item();
+            it.setType("image");
+            it.setMediaUrl("1/img-" + i + ".jpg");
+            items.add(it);
+        }
+        tooMany.setItems(items);
+        assertThrows(BusinessException.class,
+                () -> service.createCompositeMessage("alice", tooMany));
+
+        // title 缺失
+        CompositeMessageRequest noTitle = new CompositeMessageRequest();
+        noTitle.setFlashNoteId(7L);
+        CompositeMessageRequest.Item ok = new CompositeMessageRequest.Item();
+        ok.setType("image");
+        ok.setMediaUrl("1/a.jpg");
+        noTitle.setItems(List.of(ok));
+        assertThrows(BusinessException.class,
+                () -> service.createCompositeMessage("alice", noTitle));
+
+        verify(messageMapper, never()).insert(any(Message.class));
     }
 
     private UserMapper mockUserMapper() {

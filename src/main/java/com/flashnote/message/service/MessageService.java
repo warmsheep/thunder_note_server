@@ -1,6 +1,7 @@
 package com.flashnote.message.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.flashnote.message.dto.CompositeMessageRequest;
 import com.flashnote.message.dto.MessageMergeRequest;
 import com.flashnote.message.entity.Message;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -13,6 +14,8 @@ public interface MessageService {
     Message sendMessage(String username, Message message);
     
     Message mergeMessages(String username, MessageMergeRequest request);
+
+    Message createCompositeMessage(String username, CompositeMessageRequest request);
 
     SseEmitter subscribe(String username);
 

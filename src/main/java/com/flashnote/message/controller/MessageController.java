@@ -50,6 +50,15 @@ public class MessageController {
         return ApiResponse.success(toResponse(messageService.mergeMessages(authentication.getName(), request)));
     }
 
+    /**
+     * D1-W22-03 创建 COMPOSITE 卡片消息（基于客户端预上传的媒体文件）。
+     */
+    @PostMapping("/composite")
+    public ApiResponse<MessageResponse> composite(Authentication authentication,
+                                                  @RequestBody com.flashnote.message.dto.CompositeMessageRequest request) {
+        return ApiResponse.success(toResponse(messageService.createCompositeMessage(authentication.getName(), request)));
+    }
+
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(Authentication authentication) {
         return messageService.subscribe(authentication.getName());

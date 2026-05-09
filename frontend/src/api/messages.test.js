@@ -12,7 +12,8 @@ import {
   deleteMessagesBatch,
   clearInbox,
   countMessages,
-  mergeMessages
+  mergeMessages,
+  createCompositeMessage
 } from './messages'
 
 function apiResponse(data) {
@@ -208,5 +209,70 @@ describe('messages api wrappers', () => {
 
   it('mergeMessages rejects when both flashNoteId and receiverId are missing', async () => {
     await expect(mergeMessages({ title: 'x', messageIds: [1] })).rejects.toThrow(/flashNoteId/)
+  })
+
+  // D1-W22-03 createCompositeMessage
+  it('createCompositeMessage posts /api/messages/composite with cleaned items', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = { url: config.url, method: config.method, body: JSON.parse(config.data) }
+      return { status: 200, data: apiResponse({ id: 2001, mediaType: 'COMPOSITE' }), headers: {}, config }
+    })
+    const card = await createCompositeMessage({
+      title: '  旅行图集  ',
+      content: '夏天的回忆',
+      flashNoteId: 7,
+      items: [
+        { type: 'image', mediaUrl: '1/a.jpg', fileName: 'a.jpg', fileSize: 100 },
+        { type: 'image', mediaUrl: '1/b.jpg' }
+      ]
+    })
+    expect(captured.url).toBe('/api/messages/composite')
+    expect(captured.method).toBe('post')
+    expect(captured.body.title).toBe('旅行图集')
+    expect(captured.body.content).toBe('夏天的回忆')
+    expect(captured.body.flashNoteId).toBe(7)
+    expect(captured.body.receiverId).toBe(null)
+    expect(captured.body.items.length).toBe(2)
+    expect(captured.body.items[0]).toEqual({
+      type: 'image',
+      mediaUrl: '1/a.jpg',
+      thumbnailUrl: null,
+      fileName: 'a.jpg',
+      fileSize: 100,
+      content: null
+    })
+    // 第二个 item 的 fileName/thumbnailUrl 缺省时应填 null
+    expect(captured.body.items[1].fileName).toBeNull()
+    expect(card.id).toBe(2001)
+  })
+
+  it('createCompositeMessage supports peer mode via receiverId', async () => {
+    let captured
+    installMockAdapter(async (config) => {
+      captured = JSON.parse(config.data)
+      return { status: 200, data: apiResponse({ id: 1 }), headers: {}, config }
+    })
+    await createCompositeMessage({
+      title: 't',
+      receiverId: 99,
+      items: [{ type: 'file', mediaUrl: '1/x.pdf' }]
+    })
+    expect(captured.flashNoteId).toBeNull()
+    expect(captured.receiverId).toBe(99)
+  })
+
+  it('createCompositeMessage rejects empty title / items / overflow / no target', async () => {
+    await expect(createCompositeMessage({ title: '   ', flashNoteId: 1, items: [{ mediaUrl: 'a' }] }))
+      .rejects.toThrow(/title/)
+    await expect(createCompositeMessage({ title: 'x'.repeat(51), flashNoteId: 1, items: [{ mediaUrl: 'a' }] }))
+      .rejects.toThrow(/title/)
+    await expect(createCompositeMessage({ title: 'ok', flashNoteId: 1, items: [] }))
+      .rejects.toThrow(/items/)
+    const tenItems = Array.from({ length: 10 }, (_, i) => ({ type: 'image', mediaUrl: `1/i${i}.jpg` }))
+    await expect(createCompositeMessage({ title: 'ok', flashNoteId: 1, items: tenItems }))
+      .rejects.toThrow(/<= 9/)
+    await expect(createCompositeMessage({ title: 'ok', items: [{ mediaUrl: 'a' }] }))
+      .rejects.toThrow(/flashNoteId/)
   })
 })

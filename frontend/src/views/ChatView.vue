@@ -15,6 +15,7 @@ import MessageBubble from '../components/MessageBubble.vue'
 import MessageComposer from '../components/MessageComposer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
+import CardEditorDialog from '../components/CardEditorDialog.vue'
 import { uploadFile } from '../api/files'
 import { inferMediaType } from '../utils/fileHelpers'
 import { useChatScroll } from '../composables/useChatScroll'
@@ -274,21 +275,45 @@ watch(
   }
 )
 
-// MessageComposer @submit 的 payload 是 { text, file }
+// MessageComposer @submit 的 payload 是 { text, files, file }
 //   - text：字符串文本（可能为空）
-//   - file：浏览器 File 对象（可能为 null）
-// 这里需要：先把 file 通过 /api/files/upload 拿到 objectName，再把 media 信息传给 chatStore.send。
-// 历史 bug：之前直接 `handleSend(content)` 把整个 payload 对象当作字符串塞进 store，
-// 触发 `(content || '').trim is not a function`。
+//   - files：File[]（W22-04 多附件，0~9 个）
+//   - file：files[0]（向后兼容老调用）
+// 流程：
+//   - 0 附件：直接发文本
+//   - 1+ 附件：依次串行 upload + send；
+//     第一条带 text 作为 caption（与 Android 行为一致），后续 N-1 条只带 media
 async function handleSend(payload) {
   const text = (payload && typeof payload.text === 'string') ? payload.text : ''
-  const file = payload && payload.file ? payload.file : null
+  const files = Array.isArray(payload?.files)
+    ? payload.files.filter(Boolean)
+    : (payload?.file ? [payload.file] : [])
 
-  let media = null
-  if (file) {
-    uploading.value = true
-    uploadProgress.value = 0
+  // 无附件：单文本
+  if (files.length === 0) {
+    if (!text.trim()) return
     try {
+      await chatStore.send({
+        content: text,
+        currentUserId: currentUserId.value,
+        media: null
+      })
+      composerRef.value?.reset()
+      await nextTick()
+      scrollToBottom({ smooth: true })
+    } catch (e) {
+      showError(e?.serverMessage || e?.message || '发送失败')
+    }
+    return
+  }
+
+  // 有附件：依次串行处理；任一失败即终止剩余 files，已发出的不回滚
+  uploading.value = true
+  uploadProgress.value = 0
+  let sentCount = 0
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
       const result = await uploadFile(file, {
         onUploadProgress: (e) => {
           if (e && e.total) {
@@ -300,36 +325,41 @@ async function handleSend(payload) {
       if (!objectName) {
         throw new Error('上传失败：缺少 objectName')
       }
-      media = {
+      const media = {
         mediaType: inferMediaType(file),
         mediaUrl: objectName,
         fileName: result?.originalFilename || file.name,
         fileSize: file.size != null ? Number(file.size) : null
       }
-    } catch (e) {
-      uploading.value = false
+      // W22-04 第一条携带 text 作为 caption；后续仅 media
+      const contentForThis = i === 0 ? text : ''
+      await chatStore.send({
+        content: contentForThis,
+        currentUserId: currentUserId.value,
+        media
+      })
+      sentCount += 1
       uploadProgress.value = 0
-      showError(e?.serverMessage || e?.message || '附件上传失败')
-      return
     }
+    composerRef.value?.reset()
+    await nextTick()
+    scrollToBottom({ smooth: true })
+  } catch (e) {
+    if (sentCount > 0) {
+      showError(`已发送 ${sentCount}/${files.length} 个附件；剩余失败：${e?.serverMessage || e?.message || '未知错误'}`)
+    } else {
+      showError(e?.serverMessage || e?.message || '附件上传失败')
+    }
+  } finally {
     uploading.value = false
     uploadProgress.value = 0
   }
+}
 
-  try {
-    await chatStore.send({
-      content: text,
-      currentUserId: currentUserId.value,
-      media
-    })
-    composerRef.value?.reset()
-    await nextTick()
-    // W19-03 发送后强制平滑滚到底部（用户主动操作的反馈）
-    scrollToBottom({ smooth: true })
-  } catch (e) {
-    // W6-06：失败保留输入，仅 toast
-    showError(e?.serverMessage || e?.message || '发送失败')
-  }
+// W22-04 附件溢出提示（超过 9 个）
+function onComposerOverflow(payload) {
+  const max = payload?.max || 9
+  showError(`一次最多 ${max} 个附件`)
 }
 
 async function handleRetry(clientRequestId) {
@@ -552,6 +582,17 @@ function enterSelectModeWith(message) {
   chatStore.toggleSelect(message.id)
 }
 
+// W22-03 多媒体卡片新建对话框
+const cardEditorDialog = ref({ open: false })
+function openCardEditor() {
+  cardEditorDialog.value = { open: true }
+}
+function onCardCreated() {
+  showSuccess('卡片已创建')
+  // 让 chat 视图把刚创建的 COMPOSITE 卡片消息拉进来
+  reload()
+}
+
 // W21-02 MessageBubble forward-single 事件在 type='copied' 时上报，这里仅负责 toast
 function onBubbleForwardSingle(payload) {
   if (!payload || typeof payload !== 'object') return
@@ -582,6 +623,14 @@ function onBubbleForwardSingle(payload) {
         <span class="header-text">{{ headerTitle }}</span>
       </div>
       <div class="header-actions">
+        <!-- W22-03 新卡片入口：仅非多选状态时显示，避免与多选 toolbar 视觉冲突 -->
+        <button
+          v-if="!chatStore.selectMode"
+          type="button"
+          class="header-btn"
+          :title="'新建多媒体卡片'"
+          @click="openCardEditor"
+        >📇 新卡片</button>
         <button type="button" class="header-btn" @click="toggleSelectMode">
           {{ chatStore.selectMode ? '取消多选' : '多选' }}
         </button>
@@ -674,6 +723,15 @@ function onBubbleForwardSingle(payload) {
       :busy="chatStore.sending || uploading"
       :upload-progress="uploadProgress"
       @submit="handleSend"
+      @overflow="onComposerOverflow"
+    />
+
+    <!-- W22-03 多媒体卡片新建对话框 -->
+    <CardEditorDialog
+      v-model:open="cardEditorDialog.open"
+      :flash-note-id="isContactRoute ? null : flashNoteId"
+      :peer-user-id="isContactRoute ? peerUserId : null"
+      @created="onCardCreated"
     />
 
     <ConfirmDialog

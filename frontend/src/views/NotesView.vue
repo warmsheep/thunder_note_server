@@ -1,13 +1,24 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFlashNotesStore } from '../stores/flashNotes'
+import { useChatStore } from '../stores/chat'
+import { useAuthStore } from '../stores/auth'
 import { useToast } from '../composables/useToast'
+import { uploadFile } from '../api/files'
+import { inferMediaType } from '../utils/fileHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import EmptyState from '../components/EmptyState.vue'
 import NoteEditDialog from '../components/NoteEditDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import QuickCaptureDialog from '../components/QuickCaptureDialog.vue'
+import MessageActionMenu from '../components/MessageActionMenu.vue'
+
+// D1-W22-01 闪记主页 FAB（快速捕获菜单）
+// - 右下角悬浮「+」按钮，点击弹出「文字 / 图片 / 视频 / 文件 / 拍照」菜单
+// - 任一选项 → 直接发到收集箱（flashNoteId=-1），不进会话页
+// - 拍照仅移动端可见
 
 // D1-W5 闪记列表页
 // - 复用 EmptyState/LoadingState/ErrorState 三态
@@ -17,8 +28,36 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 // - W5-04/W5-06 暂不接合集字段（当前 DTO 无 collection；W7 落地后再补回填）
 
 const store = useFlashNotesStore()
+const chatStore = useChatStore()
+const authStore = useAuthStore()
 const { showSuccess, showError } = useToast()
 const router = useRouter()
+
+const INBOX_FLASH_NOTE_ID = -1
+
+const currentUserId = computed(() => authStore.user?.id ?? null)
+const isMobileLayout = ref(false)
+
+function updateLayout() {
+  if (typeof window === 'undefined' || !window.matchMedia) {
+    isMobileLayout.value = false
+    return
+  }
+  isMobileLayout.value = window.matchMedia('(pointer: coarse)').matches
+}
+updateLayout()
+let mqList = null
+if (typeof window !== 'undefined' && window.matchMedia) {
+  mqList = window.matchMedia('(pointer: coarse)')
+  if (typeof mqList.addEventListener === 'function') {
+    mqList.addEventListener('change', updateLayout)
+  }
+}
+onBeforeUnmount(() => {
+  if (mqList && typeof mqList.removeEventListener === 'function') {
+    mqList.removeEventListener('change', updateLayout)
+  }
+})
 
 function openChat(note) {
   if (!note || note.id == null) return
@@ -133,6 +172,128 @@ function formatTime(iso) {
   const D = d.getDate()
   return `${M}/${D}`
 }
+
+// ---- W22-01 快速捕获 FAB 菜单 ----
+const fabMenuOpen = ref(false)
+const fabMenuX = ref(0)
+const fabMenuY = ref(0)
+const fabBtnEl = ref(null)
+
+const fabMenuItems = computed(() => {
+  const items = [
+    { key: 'text', label: '文字', icon: '📝' },
+    { key: 'image', label: '图片', icon: '🖼' },
+    { key: 'video', label: '视频', icon: '🎥' },
+    { key: 'file', label: '文件', icon: '📎' }
+  ]
+  if (isMobileLayout.value) {
+    items.push({ key: 'camera', label: '拍照', icon: '📷' })
+  }
+  return items
+})
+
+function openFabMenu() {
+  // 在按钮上方弹出：计算 button 左上角位置（MessageActionMenu 反翻机制会自动处理边界）
+  const btn = fabBtnEl.value
+  if (btn && typeof btn.getBoundingClientRect === 'function') {
+    const rect = btn.getBoundingClientRect()
+    // 默认在按钮上方：菜单随后会反翻适适进视口
+    fabMenuX.value = Math.round(rect.right - 200)
+    fabMenuY.value = Math.round(rect.top - 8 - 36 * fabMenuItems.value.length)
+  }
+  fabMenuOpen.value = true
+}
+
+// W22-02 快记文本对话框
+const quickDialog = ref({ open: false, busy: false })
+const quickDialogRef = ref(null)
+
+function openQuickText() {
+  quickDialog.value = { open: true, busy: false }
+}
+async function handleQuickTextSubmit(text) {
+  if (!text || !text.trim()) return
+  quickDialog.value.busy = true
+  try {
+    // 走 store：不需要提前调 openConversation。send 接收 flashNoteId 参数？
+    // 现有 chatStore.send 只是在「当前会话」的上下文发送，这里需要临时到收集箱会话。
+    // 为了不污染 chatStore 全局状态，直接调 messages.api.sendMessage。
+    const { sendMessage } = await import('../api/messages')
+    await sendMessage({
+      flashNoteId: INBOX_FLASH_NOTE_ID,
+      content: String(text)
+    })
+    showSuccess('已发送到收集箱')
+    quickDialog.value = { open: false, busy: false }
+    quickDialogRef.value?.reset()
+    // 刷新闪记列表以更新收集箱预览
+    store.fetchList({ silent: true }).catch(() => {})
+  } catch (e) {
+    quickDialog.value.busy = false
+    showError(e?.serverMessage || e?.message || '发送失败')
+  }
+}
+function handleQuickTextCancel() {
+  quickDialog.value = { open: false, busy: false }
+}
+
+// W22-01 隐藏的文件 input（重用为图片 / 视频 / 文件 / 拍照）
+const hiddenFileInput = ref(null)
+const hiddenFileAccept = ref('')
+const hiddenFileCapture = ref('')
+const pendingFileKind = ref(null)
+const quickUploading = ref(false)
+
+function triggerFilePicker(kind) {
+  pendingFileKind.value = kind
+  if (kind === 'image' || kind === 'camera') {
+    hiddenFileAccept.value = 'image/*'
+  } else if (kind === 'video') {
+    hiddenFileAccept.value = 'video/*'
+  } else {
+    hiddenFileAccept.value = ''
+  }
+  hiddenFileCapture.value = kind === 'camera' ? 'environment' : ''
+  // 下一帧手动 click，为让 accept/capture 绑定生效
+  setTimeout(() => hiddenFileInput.value?.click(), 0)
+}
+
+async function onHiddenFileChange(e) {
+  const file = e.target.files && e.target.files[0]
+  if (e.target) e.target.value = ''
+  if (!file) return
+  quickUploading.value = true
+  try {
+    const result = await uploadFile(file)
+    const objectName = result?.objectName
+    if (!objectName) throw new Error('上传失败：缺少 objectName')
+    const { sendMessage } = await import('../api/messages')
+    await sendMessage({
+      flashNoteId: INBOX_FLASH_NOTE_ID,
+      content: '',
+      mediaType: inferMediaType(file),
+      mediaUrl: objectName,
+      fileName: result?.originalFilename || file.name,
+      fileSize: file.size != null ? Number(file.size) : null
+    })
+    showSuccess('已发送到收集箱')
+    store.fetchList({ silent: true }).catch(() => {})
+  } catch (err) {
+    showError(err?.serverMessage || err?.message || '发送失败')
+  } finally {
+    quickUploading.value = false
+  }
+}
+
+function onFabMenuSelect(key) {
+  if (key === 'text') {
+    openQuickText()
+  } else {
+    triggerFilePicker(key)
+  }
+}
+void chatStore
+void currentUserId
 </script>
 
 <template>
@@ -264,6 +425,49 @@ function formatTime(iso) {
       danger
       @confirm="confirmDelete"
       @cancel="cancelDelete"
+    />
+
+    <!-- W22-01 右下角悬浮 FAB -->
+    <button
+      ref="fabBtnEl"
+      type="button"
+      class="fab"
+      :class="{ mobile: isMobileLayout, busy: quickUploading }"
+      :disabled="quickUploading"
+      :aria-label="'快速捕获'"
+      :title="'快速捕获：文字 / 图片 / 视频 / 文件'"
+      @click="openFabMenu"
+    >+</button>
+
+    <!-- 菜单复用 MessageActionMenu：发现样式 · ESC / 点空白关闭 -->
+    <MessageActionMenu
+      v-model:open="fabMenuOpen"
+      :x="fabMenuX"
+      :y="fabMenuY"
+      :items="fabMenuItems"
+      :menu-width="180"
+      @select="onFabMenuSelect"
+    />
+
+    <!-- 隐藏的多用 file input：按现场设置 accept / capture -->
+    <input
+      ref="hiddenFileInput"
+      type="file"
+      class="hidden-file"
+      :accept="hiddenFileAccept"
+      :capture="hiddenFileCapture || null"
+      @change="onHiddenFileChange"
+    />
+
+    <!-- W22-02 快记文本 -->
+    <QuickCaptureDialog
+      ref="quickDialogRef"
+      v-model:open="quickDialog.open"
+      :busy="quickDialog.busy"
+      title="快速捕获·文字"
+      description="内容会发送到收集箱"
+      @submit="handleQuickTextSubmit"
+      @cancel="handleQuickTextCancel"
     />
   </div>
 </template>
@@ -435,5 +639,42 @@ function formatTime(iso) {
     padding: 4px 8px;
     font-size: 11px;
   }
+}
+
+/* W22-01 FAB 悬浮按钮 */
+.fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.fab:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+}
+.fab:active:not(:disabled) {
+  transform: translateY(0);
+}
+.fab:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.fab.mobile {
+  /* 移动端避开底部 tab bar（8 + 56 = 64） */
+  bottom: 80px;
+}
+.hidden-file {
+  display: none;
 }
 </style>
