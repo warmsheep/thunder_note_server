@@ -6,6 +6,8 @@ import {
   isVideo,
   isAudio,
   isPdf,
+  isTextLike,
+  isOfficeDoc,
   inferMediaType,
   shortenFileName
 } from './fileHelpers'
@@ -62,6 +64,35 @@ describe('media type detection', () => {
     expect(isPdf({ fileName: 'spec.pdf', contentType: '' })).toBe(true)
     expect(isPdf({ fileName: 'a.png' })).toBe(false)
     expect(isPdf({})).toBe(false)
+  })
+  it('isTextLike covers txt / md / json / code / config', () => {
+    expect(isTextLike({ fileName: 'README.md' })).toBe(true)
+    expect(isTextLike({ fileName: 'a.txt' })).toBe(true)
+    expect(isTextLike({ fileName: 'config.YAML' })).toBe(true)
+    expect(isTextLike({ fileName: 'app.java' })).toBe(true)
+    expect(isTextLike({ fileName: 'main.go' })).toBe(true)
+    expect(isTextLike({ fileName: 'styles.css' })).toBe(true)
+    expect(isTextLike({ contentType: 'text/plain' })).toBe(true)
+    expect(isTextLike({ contentType: 'application/json' })).toBe(true)
+    expect(isTextLike({ contentType: 'application/xml' })).toBe(true)
+    // 二进制类不应命中
+    expect(isTextLike({ fileName: 'a.bin', contentType: 'application/octet-stream' })).toBe(false)
+    expect(isTextLike({ fileName: 'a.png' })).toBe(false)
+    expect(isTextLike({})).toBe(false)
+  })
+  it('isOfficeDoc covers doc / docx / xls / xlsx / ppt / pptx / odt', () => {
+    expect(isOfficeDoc({ fileName: 'a.docx' })).toBe(true)
+    expect(isOfficeDoc({ fileName: 'A.DOC' })).toBe(true)
+    expect(isOfficeDoc({ fileName: 'b.xlsx' })).toBe(true)
+    expect(isOfficeDoc({ fileName: 'c.pptx' })).toBe(true)
+    expect(isOfficeDoc({ fileName: 'd.odt' })).toBe(true)
+    expect(isOfficeDoc({ contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })).toBe(true)
+    expect(isOfficeDoc({ contentType: 'application/vnd.ms-excel' })).toBe(true)
+    expect(isOfficeDoc({ contentType: 'application/msword' })).toBe(true)
+    // PDF / 图片 不应命中
+    expect(isOfficeDoc({ fileName: 'a.pdf' })).toBe(false)
+    expect(isOfficeDoc({ fileName: 'a.png' })).toBe(false)
+    expect(isOfficeDoc({})).toBe(false)
   })
 })
 

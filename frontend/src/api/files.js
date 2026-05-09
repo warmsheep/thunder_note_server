@@ -34,6 +34,15 @@ export async function fetchAsObjectUrl(objectName) {
   return URL.createObjectURL(blob)
 }
 
+// D1-W18 文本/代码类文件预览：fetch blob → 按 UTF-8 解码成字符串。
+// 解码失败（如二进制乱入）时返回带 replacement 字符的字符串，但不抛错；
+// 文件大小由调用方在 UI 层做上限保护（避免超大文件把内存吃满）。
+export async function fetchAsText(objectName) {
+  const blob = await downloadAsBlob(objectName)
+  // Blob.text() 内部按 UTF-8 解码（无 BOM 时也能处理常见情况）
+  return await blob.text()
+}
+
 // 触发浏览器下载（先 fetch 成 blob，再用临时 a[download] 触发）。
 export async function triggerDownload(objectName, fileName) {
   const blob = await downloadAsBlob(objectName)

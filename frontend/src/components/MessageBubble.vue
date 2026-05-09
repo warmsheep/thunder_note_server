@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { renderMarkdown } from '../utils/markdownRenderer'
+import MediaPreview from './MediaPreview.vue'
 
 // D1-W6 单条消息气泡
 // - 自己发送的右对齐绿色气泡，对方/系统左对齐灰色气泡

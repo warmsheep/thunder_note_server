@@ -1,14 +1,22 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { fetchAsObjectUrl, triggerDownload } from '../api/files'
-import { isImage, isVideo, isAudio, formatFileSize, shortenFileName } from '../utils/fileHelpers'
+import { fetchAsObjectUrl, fetchAsText, triggerDownload } from '../api/files'
+import {
+  isImage, isVideo, isAudio, isPdf, isTextLike, isOfficeDoc,
+  formatFileSize, shortenFileName
+} from '../utils/fileHelpers'
 import { useToast } from '../composables/useToast'
+import ImageLightbox from './ImageLightbox.vue'
+import PdfViewerDialog from './PdfViewerDialog.vue'
+import TextViewerDialog from './TextViewerDialog.vue'
 
-// D1-W9 媒体消息渲染：
-// - 图片/视频/音频通过 fetch blob → URL.createObjectURL 解决鉴权下载问题
-// - 其他类型只展示文件名 + 大小 + 下载按钮（W9-05 兜底）
-// - 组件卸载时释放 blob URL，避免内存泄漏
-// - 失败时降级为下载入口
+// D1-W9 / D1-W18 媒体消息渲染：
+// - image / video / audio: fetch blob → URL.createObjectURL，解决鉴权下载问题
+// - pdf: 文件气泡显示「预览」按钮，点击后按需 fetch blob → iframe 全屏渲染（PdfViewerDialog）
+// - 文本/代码: 文件气泡显示「预览」按钮，按需 fetch + UTF-8 解码 → <pre> 全屏（TextViewerDialog），最大 1MB
+// - office: 浏览器无法本地预览，仅显示「暂不支持在线预览，请下载后查看」+ 下载入口
+// - 其他文件: 仅显示文件名/大小/下载
+// - 组件卸载或 objectName 变更时释放所有 blob URL，避免泄漏
 
 const props = defineProps({
   message: { type: Object, required: true }
@@ -16,7 +24,7 @@ const props = defineProps({
 
 const { showError } = useToast()
 
-const blobUrl = ref(null)
+const blobUrl = ref(null) // image / video / audio 主 blob
 const loading = ref(false)
 const failed = ref(false)
 const downloading = ref(false)
@@ -38,20 +46,30 @@ const previewKind = computed(() => {
   return 'file'
 })
 
-const isLocalBlob = computed(() => typeof objectName.value === 'string' && objectName.value.startsWith('blob:'))
+const isPdfFile = computed(() => isPdf(detectionCtx.value))
+const isTextFile = computed(() => !isPdfFile.value && !isOfficeDoc(detectionCtx.value) && isTextLike(detectionCtx.value))
+const isOfficeFile = computed(() => isOfficeDoc(detectionCtx.value))
 
+const isLocalBlob = computed(
+  () => typeof objectName.value === 'string' && objectName.value.startsWith('blob:')
+)
+
+// 图标统一走 emoji，避免乱码（之前残留过 '?'）
+const fileIcon = computed(() => {
+  if (isPdfFile.value) return '📕'
+  if (isOfficeFile.value) return '📊'
+  if (isTextFile.value) return '📝'
+  return '📄'
+})
+
+// === image / video / audio blob 加载 ===
 async function loadMedia() {
-  // 本地 optimistic 消息可能已经把 blob: URL 直接放到 mediaUrl 里
   if (isLocalBlob.value) {
     blobUrl.value = objectName.value
     return
   }
-  if (!objectName.value) {
-    return
-  }
-  if (previewKind.value === 'file') {
-    return // 文件类不预加载
-  }
+  if (!objectName.value) return
+  if (previewKind.value === 'file') return // 文件类不预加载
   loading.value = true
   failed.value = false
   try {
@@ -63,13 +81,100 @@ async function loadMedia() {
   }
 }
 
-function disposeBlob() {
-  if (blobUrl.value && !isLocalBlob.value) {
-    try { URL.revokeObjectURL(blobUrl.value) } catch (_e) { /* ignore */ }
-  }
-  blobUrl.value = null
+// === 图片 lightbox ===
+const lightboxOpen = ref(false)
+function openLightbox() {
+  if (blobUrl.value) lightboxOpen.value = true
+}
+function closeLightbox() {
+  lightboxOpen.value = false
 }
 
+// === 视频全屏 ===
+const videoEl = ref(null)
+function enterVideoFullscreen() {
+  const el = videoEl.value
+  if (!el) return
+  // iOS Safari 专用 API
+  if (typeof el.webkitEnterFullscreen === 'function') {
+    try { el.webkitEnterFullscreen(); return } catch (_e) { /* fallthrough */ }
+  }
+  if (typeof el.requestFullscreen === 'function') {
+    el.requestFullscreen().catch(() => { /* ignore */ })
+  }
+}
+
+// === PDF dialog（按需懒加载 blob，避免 PDF 消息一上来就消耗 token 拉鉴权字节） ===
+const pdfBlobUrl = ref(null)
+const pdfDialogOpen = ref(false)
+const pdfLoading = ref(false)
+
+async function openPdfPreview() {
+  if (!objectName.value) {
+    showError('文件信息缺失')
+    return
+  }
+  if (pdfBlobUrl.value) {
+    pdfDialogOpen.value = true
+    return
+  }
+  pdfLoading.value = true
+  try {
+    pdfBlobUrl.value = await fetchAsObjectUrl(objectName.value)
+    pdfDialogOpen.value = true
+  } catch (e) {
+    showError(e?.serverMessage || e?.message || 'PDF 加载失败')
+  } finally {
+    pdfLoading.value = false
+  }
+}
+function closePdfPreview() {
+  pdfDialogOpen.value = false
+}
+function disposePdfBlob() {
+  if (pdfBlobUrl.value) {
+    try { URL.revokeObjectURL(pdfBlobUrl.value) } catch (_e) { /* ignore */ }
+  }
+  pdfBlobUrl.value = null
+}
+
+// === 文本/代码 dialog ===
+// 上限 1MB：超过这个大小不在浏览器内全文加载，提示用户下载
+const TEXT_PREVIEW_MAX_BYTES = 1024 * 1024
+const textDialogOpen = ref(false)
+const textContent = ref('')
+const textLoading = ref(false)
+const textError = ref('')
+
+async function openTextPreview() {
+  if (!objectName.value) {
+    showError('文件信息缺失')
+    return
+  }
+  if (fileSize.value && Number(fileSize.value) > TEXT_PREVIEW_MAX_BYTES) {
+    showError('文件较大（>1MB），建议下载后查看')
+    return
+  }
+  if (textContent.value) {
+    textDialogOpen.value = true
+    return
+  }
+  textLoading.value = true
+  textError.value = ''
+  textDialogOpen.value = true
+  try {
+    textContent.value = await fetchAsText(objectName.value)
+  } catch (e) {
+    textError.value = e?.serverMessage || e?.message || '文本加载失败'
+  } finally {
+    textLoading.value = false
+  }
+}
+function closeTextPreview() {
+  textDialogOpen.value = false
+}
+
+// === 下载 ===
 async function handleDownload() {
   if (!objectName.value) {
     showError('文件信息缺失')
@@ -85,6 +190,14 @@ async function handleDownload() {
   }
 }
 
+// === dispose ===
+function disposeBlob() {
+  if (blobUrl.value && !isLocalBlob.value) {
+    try { URL.revokeObjectURL(blobUrl.value) } catch (_e) { /* ignore */ }
+  }
+  blobUrl.value = null
+}
+
 onMounted(() => {
   loadMedia()
 })
@@ -94,11 +207,14 @@ onBeforeUnmount(() => {
   disposePdfBlob()
 })
 
-// objectName 变更（比如 optimistic 消息被替换为 server 消息）时重新加载
+// objectName 变更（比如 optimistic 消息被替换为 server 消息）时重新加载并清缓存
 watch(
   () => objectName.value,
   () => {
     disposeBlob()
+    disposePdfBlob()
+    textContent.value = ''
+    textError.value = ''
     loadMedia()
   }
 )
@@ -127,6 +243,7 @@ watch(
           :src="blobUrl"
           class="media-video"
           preload="metadata"
+          @click.stop
         ></video>
         <button
           type="button"
@@ -152,21 +269,29 @@ watch(
     </template>
 
     <div v-else class="media-file">
-      <span class="file-icon" aria-hidden="true">{{ isPdfFile ? '�' : '�📄' }}</span>
+      <span class="file-icon" aria-hidden="true">{{ fileIcon }}</span>
       <div class="file-meta">
         <p class="file-name">{{ shortenFileName(fileName, 36) }}</p>
         <p v-if="fileSize" class="file-size">{{ formatFileSize(fileSize) }}</p>
+        <p v-if="isOfficeFile" class="file-hint">暂不支持在线预览，请下载后查看</p>
       </div>
     </div>
 
     <div v-if="!isLocalBlob" class="media-actions">
       <button
-        v-if="isPdfFile"
+        v-if="previewKind === 'file' && isPdfFile"
         type="button"
         class="download-btn preview-btn"
         :disabled="pdfLoading"
         @click="openPdfPreview"
       >{{ pdfLoading ? '加载中...' : '预览' }}</button>
+      <button
+        v-else-if="previewKind === 'file' && isTextFile"
+        type="button"
+        class="download-btn preview-btn"
+        :disabled="textLoading"
+        @click="openTextPreview"
+      >{{ textLoading ? '加载中...' : '预览' }}</button>
       <button
         type="button"
         class="download-btn"
@@ -189,6 +314,16 @@ watch(
       :blob-url="pdfBlobUrl || ''"
       :file-name="fileName"
       @close="closePdfPreview"
+    />
+
+    <!-- D1-W18 文本/代码预览 -->
+    <TextViewerDialog
+      :open="textDialogOpen"
+      :text="textContent"
+      :file-name="fileName"
+      :loading="textLoading"
+      :error-message="textError"
+      @close="closeTextPreview"
     />
   </div>
 </template>
@@ -287,6 +422,12 @@ watch(
   margin: 2px 0 0 0;
   font-size: 11px;
   color: var(--color-text-hint);
+}
+.file-hint {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: var(--color-text-hint);
+  font-style: italic;
 }
 
 .media-actions {

@@ -5,11 +5,30 @@ const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', '3gp']
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'amr']
 // D1-W18-02 PDF inline 预览
 const PDF_EXTENSIONS = ['pdf']
+// D1-W18 文本 / 代码 / 配置类文件，可在浏览器内 fetch → decode → <pre> 预览
+const TEXT_EXTENSIONS = [
+  'txt', 'md', 'markdown', 'log', 'csv', 'tsv', 'json', 'xml', 'yml', 'yaml', 'toml', 'ini', 'properties', 'env',
+  'html', 'htm', 'css', 'scss', 'sass', 'less',
+  'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'vue', 'svelte',
+  'java', 'kt', 'kts', 'groovy', 'scala', 'clj',
+  'py', 'rb', 'go', 'rs', 'php', 'pl', 'lua', 'r',
+  'c', 'cc', 'cpp', 'cxx', 'h', 'hh', 'hpp', 'hxx', 'm', 'mm', 'swift',
+  'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
+  'sql', 'graphql', 'gql', 'proto', 'dockerfile', 'gitignore'
+]
+// D1-W18 Office 文件（浏览器无法本地预览，仅显示下载入口 + 友好提示）
+const OFFICE_EXTENSIONS = [
+  'doc', 'docx', 'dot', 'dotx', 'rtf',
+  'xls', 'xlsx', 'xlsm', 'xlsb',
+  'ppt', 'pptx', 'pps', 'ppsx',
+  'odt', 'ods', 'odp', 'pages', 'numbers', 'key'
+]
 
 const IMAGE_PREFIXES = ['image/']
 const VIDEO_PREFIXES = ['video/']
 const AUDIO_PREFIXES = ['audio/']
 const PDF_PREFIXES = ['application/pdf']
+const TEXT_PREFIXES = ['text/']
 
 const KB = 1024
 const MB = 1024 * 1024
@@ -66,6 +85,29 @@ export function isAudio({ mediaType, fileName, contentType } = {}) {
 export function isPdf({ fileName, contentType } = {}) {
   if (inMime(contentType, PDF_PREFIXES)) return true
   if (inExt(fileName, PDF_EXTENSIONS)) return true
+  return false
+}
+
+// D1-W18 文本类（含代码/配置）判定：能在浏览器里 fetch → decode UTF-8 → 直接预览
+// 注意：必须排在 isPdf / isOffice 之后判断，避免冲突；本函数只看后缀 + text/ MIME
+export function isTextLike({ fileName, contentType } = {}) {
+  if (inMime(contentType, TEXT_PREFIXES)) return true
+  if (inExt(fileName, TEXT_EXTENSIONS)) return true
+  // 部分代码文件 MIME 不是 text/，但属于 application/json、application/xml 等
+  const ct = (contentType || '').toLowerCase()
+  if (ct === 'application/json' || ct === 'application/xml' || ct === 'application/javascript') return true
+  return false
+}
+
+// D1-W18 Office 文档判定：浏览器无法本地预览（需要服务端 LibreOffice / Office Online），
+// 仅用来在文件气泡里显示"暂不支持预览，请下载"友好提示
+export function isOfficeDoc({ fileName, contentType } = {}) {
+  if (inExt(fileName, OFFICE_EXTENSIONS)) return true
+  const ct = (contentType || '').toLowerCase()
+  if (ct.startsWith('application/vnd.ms-')) return true
+  if (ct.startsWith('application/vnd.openxmlformats-officedocument')) return true
+  if (ct.startsWith('application/vnd.oasis.opendocument')) return true
+  if (ct === 'application/msword') return true
   return false
 }
 
