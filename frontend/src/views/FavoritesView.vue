@@ -217,15 +217,23 @@ function timeText(iso) {
   overflow: hidden;
 }
 
-/* 媒体收藏卡片：限制图片 / 视频 / 文件卡片在收藏列表里的最大尺寸，避免抢眼 */
+/* 媒体收藏卡片：限制图片 / 视频 / 文件卡片在收藏列表里的最大尺寸，避免抢眼。
+   关键：不要在这里用 flex / align-items: stretch，否则 <img> 会被 stretch 到 100%
+   宽，配合 max-height 出现高度被截但宽度仍被拉满的"拉伸"效果。
+   用 block 容器 + width/height: auto 让浏览器按图片原始宽高比自由缩放。 */
 .fav-media {
-  display: flex;
-  flex-direction: column;
+  display: block;
   cursor: default;
 }
 .fav-media :deep(.media-image),
 .fav-media :deep(.media-video) {
+  /* 显式 auto，覆盖父级可能传下来的 100% / stretch */
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 220px;
+  /* object-fit: contain 在因 aspect-ratio 与容器不一致时仍保留比例（双保险） */
+  object-fit: contain;
 }
 .fav-caption {
   margin: 4px 0 0 0;
