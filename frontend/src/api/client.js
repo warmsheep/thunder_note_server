@@ -30,12 +30,15 @@ export function __resetApiClientForTests() {
   ongoingRefresh = null
 }
 
+// 注意：不要在这里设置默认 Content-Type。
+// axios 1.x 的 transformRequest 会根据 data 类型自动处理：
+//   - FormData → 浏览器自动写入 'multipart/form-data; boundary=...'
+//   - 普通 object → 自动写入 'application/json'
+// 一旦在 instance defaults 上写死 'application/json'，FormData 上传时
+// Content-Type 不会被覆盖，后端会抛 "Current request is not a multipart request"。
 const raw = axios.create({
   baseURL: '/',
-  timeout: HTTP_TIMEOUT_MS,
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  timeout: HTTP_TIMEOUT_MS
 })
 
 raw.interceptors.request.use((config) => {

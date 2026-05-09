@@ -72,6 +72,27 @@ describe('files api wrappers', () => {
     await expect(uploadFile(null)).rejects.toThrow(/file/)
   })
 
+  it('uploadFile must NOT send Content-Type: application/json (regression: multipart)', async () => {
+    // 回归保护：曾经 apiClient 在 axios.create 里写死了 'Content-Type': 'application/json'，
+    // 导致 FormData 上传请求带着 application/json 发出，后端抛
+    // "Current request is not a multipart request"。
+    // 修复后该 instance 默认头被移除，axios 1.x 的 transformRequest 会根据 data 类型
+    // 自动设置 multipart/form-data（含 boundary）或 application/json。
+    let captured
+    installMockAdapter(async (config) => {
+      captured = config
+      return { status: 200, data: apiResponse({ objectName: 'u/1', originalFilename: 'a' }), headers: {}, config }
+    })
+    const file = new File([new Uint8Array([1])], 'a.bin')
+    await uploadFile(file)
+    const ct =
+      (captured.headers && (captured.headers['Content-Type'] || captured.headers['content-type'])) ||
+      ''
+    // 不允许是 application/json；可能为空字符串（由浏览器自带 multipart boundary）
+    // 也可能是 'multipart/form-data; boundary=...'
+    expect(String(ct)).not.toMatch(/application\/json/i)
+  })
+
   it('downloadAsBlob requests with responseType=blob and objectName param', async () => {
     let captured
     installMockAdapter(async (config) => {
