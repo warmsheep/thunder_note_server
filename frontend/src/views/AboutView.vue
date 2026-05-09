@@ -7,8 +7,9 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-const APP_NAME = 'Thunder Note 闪记'
-const APP_DESC = '把一切灵感和碎片记下来——一条消息流的笔记应用。'
+// D1-W26-04 与 Android `strings.xml` `about_app_title` / `about_slogan` 文案对齐
+const APP_NAME = '闪记 Thunder Note'
+const APP_DESC = '快速记录，灵感闪现\n让笔记像闪电一样快捷'
 const clientVersion = import.meta.env?.VITE_APP_VERSION || 'd1.6-dev'
 const buildTime = import.meta.env?.VITE_APP_BUILD_TIME || '—'
 const PROJECT_HOME = 'https://github.com/'
@@ -161,6 +162,8 @@ function goBack() {
   margin: 0 0 14px 0;
   font-size: 13px;
   color: var(--color-text-secondary);
+  /* W26-04 slogan 含 \n，让换行可见 */
+  white-space: pre-line;
 }
 .hero-version {
   margin: 0;

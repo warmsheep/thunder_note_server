@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
         v-if="showEmpty"
         icon="⭐"
         title="还没有收藏"
-        description="在闪记会话中点消息上的“☆ 收藏”按钮即可加入这里"
+        description="长按聊天消息即可加入收藏"
       />
       <section v-else class="group">
         <article

@@ -19,7 +19,9 @@ const MAX_ATTACHMENTS = 9
 const props = defineProps({
   busy: { type: Boolean, default: false },
   uploadProgress: { type: Number, default: 0 },
-  placeholder: { type: String, default: '输入消息（Enter 发送，Shift+Enter 换行）' },
+  // D1-W26-04 与 Android `chat_input_hint` 对齐为简洁版「输入内容...」；
+  // 桌面端通过 textarea title 仍保留 Enter / Shift+Enter 教学提示
+  placeholder: { type: String, default: '输入内容...' },
   // null=自动检测；显式 true/false 由父级覆盖
   showCameraBtn: { type: Boolean, default: null }
 })
@@ -346,6 +348,7 @@ defineExpose({
         v-model="text"
         class="composer-input"
         :placeholder="placeholder"
+        :title="'Enter 发送 · Shift + Enter 换行'"
         :disabled="busy"
         rows="2"
         @keydown.enter="handleEnter"

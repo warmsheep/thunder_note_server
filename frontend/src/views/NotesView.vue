@@ -16,6 +16,7 @@ import NoteEditDialog from '../components/NoteEditDialog.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import QuickCaptureDialog from '../components/QuickCaptureDialog.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import CardEditorDialog from '../components/CardEditorDialog.vue'
 
 // D1-W22-01 闪记主页 FAB（快速捕获菜单）
 // - 右下角悬浮「+」按钮，点击弹出「文字 / 图片 / 视频 / 文件 / 拍照」菜单
@@ -305,6 +306,9 @@ const fabMenuItems = computed(() => {
   if (isMobileLayout.value) {
     items.push({ key: 'camera', label: '拍照', icon: '📷' })
   }
+  // D1-W26-02 与 Android `PopupQuickCaptureActions` 对齐，
+  // 收集箱也支持直接新建多媒体卡片（默认 flashNoteId=-1）
+  items.push({ key: 'card', label: '卡片', icon: '📇' })
   return items
 })
 
@@ -401,9 +405,23 @@ async function onHiddenFileChange(e) {
   }
 }
 
+// D1-W26-02 卡片新建（目标固定为收集箱，flashNoteId=-1）
+const cardEditor = ref({ open: false })
+
+function openCardEditor() {
+  cardEditor.value = { open: true }
+}
+function onCardEditorCreated() {
+  showSuccess('已发送到收集箱')
+  // 刷新闪记列表以更新收集箱预览
+  store.fetchList({ silent: true }).catch(() => {})
+}
+
 function onFabMenuSelect(key) {
   if (key === 'text') {
     openQuickText()
+  } else if (key === 'card') {
+    openCardEditor()
   } else {
     triggerFilePicker(key)
   }
@@ -452,7 +470,7 @@ void currentUserId
         v-if="showEmpty"
         icon="⚡"
         title="还没有闪记"
-        description="点右上角“新建闪记”开始记录"
+        description="点击右上角 + 创建第一个"
       />
       <template v-else-if="showingSearchResults">
         <section class="group">
@@ -696,6 +714,13 @@ void currentUserId
       description="内容会发送到收集箱"
       @submit="handleQuickTextSubmit"
       @cancel="handleQuickTextCancel"
+    />
+
+    <!-- D1-W26-02 多媒体卡片：目标固定为收集箱（flashNoteId=-1） -->
+    <CardEditorDialog
+      v-model:open="cardEditor.open"
+      :flash-note-id="INBOX_FLASH_NOTE_ID"
+      @created="onCardEditorCreated"
     />
   </div>
 </template>

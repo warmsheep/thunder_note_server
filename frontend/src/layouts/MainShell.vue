@@ -1,3 +1,26 @@
+<script>
+// D1-W26-01 主导航数据源：与 Android `menu_bottom_tabs.xml` 顺序对齐
+// 闪记 / 合集 / 联系人 / 收藏 / 搜索 / 我的（搜索为 Web 额外项）
+// 暴露为 normal script 便于测试与外部引用（script setup 不允许 export）
+export function buildNavItems(pendingCount = 0) {
+  const safeCount = Number.isFinite(Number(pendingCount)) ? Math.max(0, Math.floor(Number(pendingCount))) : 0
+  return [
+    { name: 'notes', label: '闪记', icon: '⚡', to: '/notes' },
+    { name: 'collections', label: '合集', icon: '📂', to: '/collections' },
+    {
+      name: 'contacts',
+      label: '联系人',
+      icon: '👥',
+      to: '/contacts',
+      badge: safeCount > 0 ? safeCount : 0
+    },
+    { name: 'favorites', label: '收藏', icon: '⭐', to: '/favorites' },
+    { name: 'search', label: '搜索', icon: '🔍', to: '/search' },
+    { name: 'profile', label: '我的', icon: '👤', to: '/profile' }
+  ]
+}
+</script>
+
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute, RouterView, RouterLink } from 'vue-router'
@@ -7,7 +30,12 @@ import { useToast } from '../composables/useToast'
 
 // D1-W4-01 / W4-02：主壳层
 // 桌面：左侧栏 + 内容区；移动：顶栏 + 内容 + 底部 tab
-// 5 个 tab：闪记 / 合集 / 收藏 / 搜索 / 我的
+//
+// D1-W26-01 联系人提升为顶级导航项（与 Android `tab_contact` 对齐），
+// 共 6 项：闪记 / 合集 / 联系人 / 收藏 / 搜索 / 我的。
+// 桌面 sidebar 与移动 bottombar 共用同一份 `navItems` 数据源。
+// 联系人项右侧带红点 / 数字徽标（来自 contactsStore.pendingCount）。
+// 用户菜单中的「联系人」入口保留作为快捷路径，避免老用户找不到。
 
 const router = useRouter()
 const route = useRoute()
@@ -35,16 +63,12 @@ function closeUserMenu() {
   userMenuOpen.value = false
 }
 
-const navItems = [
-  { name: 'notes', label: '闪记', icon: '⚡', to: '/notes' },
-  { name: 'collections', label: '合集', icon: '📂', to: '/collections' },
-  { name: 'favorites', label: '收藏', icon: '⭐', to: '/favorites' },
-  { name: 'search', label: '搜索', icon: '🔍', to: '/search' },
-  { name: 'profile', label: '我的', icon: '👤', to: '/profile' }
-]
+// D1-W26-01 联系人提升为顶级导航项；buildNavItems 是 normal script 中导出的纯工厂，
+// 这里包成 computed 让 contactsStore.pendingCount 变更触发 badge 重渲染
+const navItems = computed(() => buildNavItems(contactsStore.pendingCount))
 
 const currentTitle = computed(() => {
-  const matched = navItems.find((item) => route.path.startsWith(item.to))
+  const matched = navItems.value.find((item) => route.path.startsWith(item.to))
   return matched ? matched.label : '闪记'
 })
 
@@ -79,6 +103,12 @@ async function handleLogout() {
         >
           <span class="sidebar-icon" aria-hidden="true">{{ item.icon }}</span>
           <span class="sidebar-label">{{ item.label }}</span>
+          <!-- D1-W26-01 联系人项 pendingCount 红点徽标 -->
+          <span
+            v-if="item.badge"
+            class="nav-badge"
+            :title="item.badge + ' 条好友请求'"
+          >{{ item.badge > 99 ? '99+' : item.badge }}</span>
         </RouterLink>
       </nav>
     </aside>
@@ -133,7 +163,15 @@ async function handleLogout() {
         class="bottom-link"
         active-class="bottom-link-active"
       >
-        <span class="bottom-icon" aria-hidden="true">{{ item.icon }}</span>
+        <span class="bottom-icon-wrap">
+          <span class="bottom-icon" aria-hidden="true">{{ item.icon }}</span>
+          <!-- D1-W26-01 移动端 bottombar 联系人项徽标 -->
+          <span
+            v-if="item.badge"
+            class="bottom-badge"
+            :title="item.badge + ' 条好友请求'"
+          >{{ item.badge > 99 ? '99+' : item.badge }}</span>
+        </span>
         <span class="bottom-label">{{ item.label }}</span>
       </RouterLink>
     </nav>
@@ -202,6 +240,27 @@ async function handleLogout() {
   font-size: 18px;
   width: 24px;
   text-align: center;
+}
+.sidebar-link {
+  position: relative;
+}
+.sidebar-label {
+  flex: 1;
+}
+/* D1-W26-01 sidebar / bottombar 通用徽标（红色圆角，最多 99+） */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: auto;
 }
 
 .main {
@@ -395,8 +454,32 @@ async function handleLogout() {
   .bottom-link-active {
     color: var(--color-primary);
   }
+  .bottom-icon-wrap {
+    position: relative;
+    display: inline-flex;
+  }
   .bottom-icon {
     font-size: 20px;
+  }
+  /* D1-W26-01 bottombar 徽标：右上角红色圆点（数字版 / 红点版自动选） */
+  .bottom-badge {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--color-danger);
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border: 2px solid var(--color-surface);
+    box-sizing: content-box;
   }
 
   /* 移动端 user-name 在 topbar 太挤，隐藏，仅显示头像 */
