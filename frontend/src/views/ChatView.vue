@@ -1302,14 +1302,15 @@ function onBubbleForwardSingle(payload) {
   padding: 8px 0;
 }
 
-/* W12-01 桌面超宽屏聊天体验：消息区两侧 padding 自动扩大，
-   把消息列宽视觉收窄到 var(--chat-max-width) 居中，
-   避免在 4K 屏上一行气泡跨度过大；header / composer 保持全宽以贴合页面框架。
-   max() 兜底，确保窄屏时不会出现负 padding。 */
+/* W12-01 / D1-W28-14 桌面超宽屏聊天体验：消息列宽控制在 var(--chat-max-width) 内，
+   避免 4K 屏上一行气泡跨度过大；同时整列贴向容器右侧（不再居中），让 mine 气泡
+   真正紧贴页面最右边，与微信桌面客户端的视觉一致。
+   实现：左 padding 用 max() 把消息区推到右侧；右 padding 固定一个小间距。
+   max() 兜底，确保窄屏（接近 1280px）时不会出现负 padding。 */
 @media (min-width: 1280px) {
   .chat-scroll {
-    padding-left: max(16px, calc((100% - var(--chat-max-width)) / 2));
-    padding-right: max(16px, calc((100% - var(--chat-max-width)) / 2));
+    padding-left: max(16px, calc(100% - var(--chat-max-width) - 16px));
+    padding-right: 16px;
   }
 }
 
