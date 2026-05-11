@@ -9,9 +9,9 @@
 :root {
   color-scheme: light;
 
-  --color-primary: #07C160;
-  --color-primary-dark: #06AD56;
-  --color-primary-light: #E7F8EF;
+  --color-primary: #FF6B00;
+  --color-primary-dark: #E55F00;
+  --color-primary-light: #FFF3E6;
 
   --color-bg: #F5F5F5;
   --color-surface: #FFFFFF;
@@ -46,8 +46,8 @@
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif;
 
-  /* W12-03 a11y 焦点环颜色（用主色 + alpha，覆盖在浅/深背景上都清晰） */
-  --color-focus-ring: rgba(7, 193, 96, 0.45);
+  /* W12-03 a11y 焦点环颜色（用主色橙 #FF6B00 + alpha，覆盖在浅/深背景上都清晰） */
+  --color-focus-ring: rgba(255, 107, 0, 0.45);
   --focus-ring: 0 0 0 3px var(--color-focus-ring);
 
   /* W12-04 阅读最大宽度。后续每个 view 用容器 wrapper 自己引用（不强制全局生效） */
@@ -56,7 +56,7 @@
   --chat-max-width: 980px;
 
   /* 文本选中色 */
-  --color-selection: rgba(7, 193, 96, 0.18);
+  --color-selection: rgba(255, 107, 0, 0.18);
 
   /* 断点（CSS variables 不能直接用于 @media，这里仅做文档化 / JS 取值用） */
   --bp-mobile: 480px;

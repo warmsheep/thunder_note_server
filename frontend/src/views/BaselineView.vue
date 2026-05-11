@@ -57,7 +57,7 @@ button {
   cursor: pointer;
 }
 button:hover {
-  border-color: #6366f1;
-  color: #4f46e5;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 </style>

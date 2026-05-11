@@ -7,7 +7,7 @@ import MessageActionMenu from './MessageActionMenu.vue'
 import CardMediaGrid from './CardMediaGrid.vue'
 
 // D1-W6 / D1-W21 单条消息气泡
-// - 自己发送的右对齐绿色气泡，对方/系统左对齐灰色气泡
+// - 自己发送的右对齐橙色气泡（#FFD9B3，对齐 Android chat_mine），对方/系统左对齐灰色气泡
 // - 文本：D1-W17-04 用 markdown 渲染（marked + DOMPurify）
 // - 卡片：D1-W17-02 点击 → 打开详情查看 items 列表
 // - 媒体：W8 实现
@@ -338,7 +338,7 @@ async function onMenuSelect(key) {
   white-space: pre-wrap;
 }
 .bubble-mine {
-  background: #95EC69;
+  background: #FFD9B3;
   color: #111111;
 }
 .bubble-other {
