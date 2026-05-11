@@ -804,7 +804,7 @@ function onBubbleForwardSingle(payload) {
           v-for="m in chatStore.messages"
           :key="m.id != null ? `id:${m.id}` : `cr:${m.clientRequestId}`"
           :message="m"
-          :mine="isContactRoute && isOwnMessage(m, currentUserId)"
+          :mine="!isContactRoute || isOwnMessage(m, currentUserId)"
           :select-mode="chatStore.selectMode"
           :selected="m.id != null && chatStore.selectedIds.has(m.id)"
           :favorited="m.id != null && favoritesStore.isFavorited(m.id)"
