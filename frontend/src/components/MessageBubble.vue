@@ -124,6 +124,17 @@ function onContextMenu(e) {
   openMenuAt(e.clientX, e.clientY)
 }
 
+// D1-W28-13 多选模式下点击整条消息任意区域即可 toggle 选中，
+// 不再要求精确点到 select-box 复选框。
+// 用 @click.capture 在捕获阶段拦截，吞掉子元素点击（PDF 预览 / 卡片打开 / 文本展开等）
+// 避免与选中冲突；复选框自身的 change 事件保持不变（双重保险）。
+function onRowClick(e) {
+  if (!props.selectMode || m.value.id == null) return
+  e.preventDefault()
+  e.stopPropagation()
+  emit('toggle-select', m.value.id)
+}
+
 // 触摸长按：touchstart 后计时 LONG_PRESS_MS；期间移动超过容差则取消
 let longPressTimer = null
 let pressStart = { x: 0, y: 0 }
@@ -217,6 +228,7 @@ async function onMenuSelect(key) {
   <div
     class="bubble-row"
     :class="[mine ? 'mine' : 'other', { selectable: selectMode }]"
+    @click.capture="onRowClick"
     @contextmenu="onContextMenu"
     @touchstart.passive="onTouchStart"
     @touchmove.passive="onTouchMove"
