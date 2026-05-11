@@ -35,6 +35,27 @@ const props = defineProps({
   showCameraBtn: { type: Boolean, default: null }
 })
 
+const ICON_PATHS = {
+  add: ['M12 5V19', 'M5 12H19'],
+  camera: [
+    'M4 8.5C4 7.4 4.9 6.5 6 6.5H8L9.4 4.5H14.6L16 6.5H18C19.1 6.5 20 7.4 20 8.5V17.5C20 18.6 19.1 19.5 18 19.5H6C4.9 19.5 4 18.6 4 17.5V8.5Z',
+    'M12 16C13.66 16 15 14.66 15 13C15 11.34 13.66 10 12 10C10.34 10 9 11.34 9 13C9 14.66 10.34 16 12 16Z'
+  ],
+  mic: [
+    'M12 14C13.66 14 15 12.66 15 11V6C15 4.34 13.66 3 12 3C10.34 3 9 4.34 9 6V11C9 12.66 10.34 14 12 14Z',
+    'M6.5 10.5C6.5 13.54 8.96 16 12 16C15.04 16 17.5 13.54 17.5 10.5',
+    'M12 16V21',
+    'M9 21H15'
+  ],
+  card: [
+    'M5 5H19C20.1 5 21 5.9 21 7V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7C3 5.9 3.9 5 5 5Z',
+    'M7 9H13',
+    'M7 13H17',
+    'M7 16H14'
+  ],
+  send: ['M4 20L21 12L4 4V10L14 12L4 14V20Z']
+}
+
 // W22-05 拍照按钮：默认仅移动端（pointer: coarse）显示
 const autoShowCamera = computed(() => {
   if (typeof window === 'undefined' || !window.matchMedia) return false
@@ -468,16 +489,26 @@ defineExpose({
         class="attach-btn"
         :disabled="busy"
         :title="'添加附件（可多选）'"
+        :aria-label="'添加附件（可多选）'"
         @click="pickFile"
-      >📎</button>
+      >
+        <svg class="composer-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-for="path in ICON_PATHS.add" :key="path" :d="path" />
+        </svg>
+      </button>
       <button
         v-if="cameraBtnVisible"
         type="button"
         class="attach-btn"
         :disabled="busy"
         :title="'拍照'"
+        :aria-label="'拍照'"
         @click="pickCamera"
-      >📷</button>
+      >
+        <svg class="composer-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-for="path in ICON_PATHS.camera" :key="path" :d="path" />
+        </svg>
+      </button>
       <!-- D1-W27-02 麦克风：点击进入录音状态 -->
       <button
         type="button"
@@ -486,7 +517,11 @@ defineExpose({
         :title="'录制语音'"
         :aria-label="'录制语音'"
         @click="startRecording"
-      >🎤</button>
+      >
+        <svg class="composer-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-for="path in ICON_PATHS.mic" :key="path" :d="path" />
+        </svg>
+      </button>
       <!-- D1-W28-04 新建多媒体卡片：与附件、拍照、录音同位，点击 → 父级打开 CardEditorDialog -->
       <button
         type="button"
@@ -495,7 +530,11 @@ defineExpose({
         :title="'新建卡片'"
         :aria-label="'新建卡片'"
         @click="openCardEditor"
-      >📇</button>
+      >
+        <svg class="composer-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-for="path in ICON_PATHS.card" :key="path" :d="path" />
+        </svg>
+      </button>
 
       <textarea
         ref="textareaEl"
@@ -504,7 +543,7 @@ defineExpose({
         :placeholder="placeholder"
         :title="'Enter 发送 · Shift + Enter 换行'"
         :disabled="busy"
-        rows="2"
+        rows="1"
         @keydown.enter="handleEnter"
         @paste="onPaste"
       ></textarea>
@@ -513,8 +552,14 @@ defineExpose({
         type="button"
         class="send-btn"
         :disabled="!canSend"
+        :title="busy ? '发送中' : '发送'"
+        :aria-label="busy ? '发送中' : '发送'"
         @click="doSubmit"
-      >{{ busy ? '发送中...' : '发送' }}</button>
+      >
+        <svg class="composer-icon send-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path v-for="path in ICON_PATHS.send" :key="path" :d="path" />
+        </svg>
+      </button>
     </div>
 
     <!-- W22-07 拖拽浮层提示：仅在 dragActive 时覆盖 composer，pointer-events:none 避免拦截 drop -->
@@ -643,17 +688,19 @@ defineExpose({
 .attach-btn {
   width: 36px;
   height: 36px;
-  border: 1px solid var(--color-border);
+  flex: 0 0 36px;
+  border: none;
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--color-primary-light);
+  color: #1f1f1f;
   cursor: pointer;
-  font-size: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 .attach-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  filter: brightness(0.98);
 }
 .attach-btn:disabled {
   opacity: 0.6;
@@ -663,17 +710,19 @@ defineExpose({
 .composer-input {
   flex: 1;
   resize: none;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-family: inherit;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 18px;
   outline: none;
   background: var(--color-surface);
   color: var(--color-text-primary);
-  min-height: 48px;
+  min-height: 40px;
+  height: 40px;
   max-height: 160px;
+  box-sizing: border-box;
 }
 .composer-input:focus {
   border-color: var(--color-primary);
@@ -683,12 +732,17 @@ defineExpose({
   cursor: not-allowed;
 }
 .send-btn {
-  padding: 8px 18px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-primary);
   color: #ffffff;
-  font-size: 14px;
   cursor: pointer;
 }
 .send-btn:hover:not(:disabled) {
@@ -697,6 +751,21 @@ defineExpose({
 .send-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.composer-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.send-icon {
+  fill: currentColor;
+  stroke: none;
+  width: 20px;
+  height: 20px;
 }
 
 /* D1-W27-02 录音 overlay：占用 composer-row 位置，与 Android 录音条视觉密度对齐 */

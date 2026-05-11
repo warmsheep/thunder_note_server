@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, createApp, h, nextTick } from 'vue'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import MessageComposer from './MessageComposer.vue'
 
 // D1-W22-04 / W22-06 / W22-07 MessageComposer 多附件 + 粘贴 + 拖拽 单测
@@ -156,6 +158,19 @@ describe('MessageComposer', () => {
     expect(ctx.submitArg.value.files.length).toBe(2)
     expect(ctx.submitArg.value.file).toBe(ctx.submitArg.value.files[0])
     ctx.unmount()
+  })
+
+  it('输入区操作按钮使用 SVG 矢量图标', async () => {
+    const ctx = mountComposer({ showCameraBtn: true })
+    await nextTick()
+    expect(ctx.root.querySelectorAll('.attach-btn svg.composer-icon').length).toBe(4)
+    expect(ctx.root.querySelector('.send-btn svg.send-icon')).not.toBeNull()
+    ctx.unmount()
+  })
+
+  it('输入区左侧操作图标使用 Android 同款黑色前景', async () => {
+    const source = readFileSync(join(process.cwd(), 'src/components/MessageComposer.vue'), 'utf8')
+    expect(source).toContain('color: #1f1f1f;')
   })
 
   // D1-W24-05 ChatView 会用 setText / getText 恢复草稿

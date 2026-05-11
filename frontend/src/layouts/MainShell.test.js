@@ -4,14 +4,13 @@ import { buildNavItems } from './MainShell.vue'
 // D1-W26-01 主导航数据：联系人作为顶级 tab + badge 数据流测试
 
 describe('buildNavItems', () => {
-  it('共 6 项，顺序与 Android `menu_bottom_tabs.xml` 对齐（含 Web 独有的搜索）', () => {
+  it('共 5 项，顺序与 Android `menu_bottom_tabs.xml` 对齐', () => {
     const items = buildNavItems(0)
     expect(items.map((i) => i.name)).toEqual([
       'notes',
       'collections',
       'contacts',
       'favorites',
-      'search',
       'profile'
     ])
   })
@@ -33,7 +32,7 @@ describe('buildNavItems', () => {
     expect(contacts).toBeTruthy()
     expect(contacts.to).toBe('/contacts')
     expect(contacts.label).toBe('联系人')
-    expect(contacts.icon).toBe('👥')
+    expect(contacts.icon).toBe('contact')
   })
 
   it('pendingCount = 0 时联系人项 badge = 0（前端用 v-if="item.badge" 隐藏）', () => {
@@ -54,7 +53,7 @@ describe('buildNavItems', () => {
     expect(buildNavItems(2.7).find((i) => i.name === 'contacts').badge).toBe(2)
   })
 
-  it('pendingCount 不影响其他 5 项，且这些项没有 badge 字段', () => {
+  it('pendingCount 不影响其他 4 项，且这些项没有 badge 字段', () => {
     const items = buildNavItems(99)
     for (const item of items) {
       if (item.name !== 'contacts') {
@@ -63,8 +62,13 @@ describe('buildNavItems', () => {
     }
   })
 
-  it('品牌项独立存在：sidebar-brand 的 ⚡ 闪记 与导航 6 项不冲突（不在 navItems 内）', () => {
+  it('品牌项独立存在：sidebar-brand 的 ⚡ 闪记 与导航 5 项不冲突（不在 navItems 内）', () => {
     const items = buildNavItems(0)
-    expect(items.find((i) => i.icon === '⚡' && i.name !== 'notes')).toBeUndefined()
+    expect(items.find((i) => i.icon === '⚡')).toBeUndefined()
+  })
+
+  it('搜索不在底部导航项中，搜索入口由闪记页右上角承担', () => {
+    const items = buildNavItems(0)
+    expect(items.find((i) => i.name === 'search')).toBeUndefined()
   })
 })

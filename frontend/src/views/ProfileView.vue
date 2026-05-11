@@ -230,8 +230,8 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
       @retry="handleRetry"
     />
     <template v-else>
-      <section class="card">
-        <header class="card-header">
+      <section class="card profile-card">
+        <header class="card-header profile-header">
           <div class="avatar-wrap">
             <AuthenticatedAvatar
               :avatar="profileStore.avatar"
@@ -249,6 +249,7 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
             <p class="name">{{ profileStore.nickname || user.username || '未设置昵称' }}</p>
             <p v-if="user.username" class="caption">用户名：{{ user.username }}</p>
             <p v-if="user.email" class="caption">邮箱：{{ user.email }}</p>
+            <p class="profile-bio">{{ profileStore.bio || '（还没有简介，点击编辑资料添加）' }}</p>
           </div>
           <button
             v-if="!editing"
@@ -258,12 +259,8 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
           >编辑资料</button>
         </header>
 
-        <div class="card-body">
-          <template v-if="!editing">
-            <p class="bio-label">个人简介</p>
-            <p class="bio-text">{{ profileStore.bio || '（还没有简介，点击右上角编辑添加）' }}</p>
-          </template>
-          <form v-else class="edit-form" @submit.prevent="saveEdit">
+        <div v-if="editing" class="card-body">
+          <form class="edit-form" @submit.prevent="saveEdit">
             <label class="field">
               <span class="field-label">昵称（≤ {{ NICK_MAX }} 字）</span>
               <input
@@ -333,6 +330,12 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
               <span class="chevron">›</span>
             </span>
           </li>
+          <li class="link-row" @click="$router.push({ name: 'change-password' })">
+            <span class="kv-label">修改密码</span>
+            <span class="kv-value">
+              <span class="chevron">›</span>
+            </span>
+          </li>
         </ul>
       </section>
 
@@ -381,6 +384,16 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
   padding: 20px;
   border-bottom: 1px solid var(--color-divider);
 }
+.profile-card {
+  border: none;
+}
+.profile-header {
+  align-items: center;
+  min-height: 168px;
+  padding: 24px;
+  background: linear-gradient(135deg, var(--color-primary), #ffa500);
+  border-bottom: none;
+}
 .card-header.simple {
   padding: 14px 20px;
 }
@@ -398,18 +411,18 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
   gap: 8px;
 }
 .avatar-edit {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  border-radius: var(--radius-sm);
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
-  color: var(--color-text-secondary);
+  color: #ffffff;
   cursor: pointer;
   min-width: 80px;
 }
 .avatar-edit:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
 }
 .avatar-edit:disabled {
   opacity: 0.7;
@@ -456,13 +469,21 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: #ffffff;
   word-break: break-word;
 }
 .caption {
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-secondary);
+  color: rgba(255, 255, 255, 0.78);
+  word-break: break-word;
+}
+.profile-bio {
+  margin: 6px 0 0 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
   word-break: break-word;
 }
 
@@ -547,9 +568,18 @@ const avatarPercent = computed(() => Math.round(avatarProgress.value * 100))
   cursor: pointer;
   align-self: flex-start;
 }
+.profile-header .btn-secondary {
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
 .btn-secondary:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+.profile-header .btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #ffffff;
 }
 .btn-secondary:disabled {
   opacity: 0.6;

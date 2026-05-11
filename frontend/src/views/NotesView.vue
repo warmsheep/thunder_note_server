@@ -440,16 +440,22 @@ void currentUserId
 <template>
   <div class="notes-page">
     <div class="page-toolbar">
-      <span class="page-stats" v-if="store.loaded">共 {{ store.visibleCount }} 条</span>
-      <span class="page-stats" v-else></span>
+      <span class="page-title">闪记</span>
       <div class="toolbar-actions">
         <button
           type="button"
           class="btn-search-toggle"
           :class="{ active: inlineSearchOpen }"
           @click="inlineSearchOpen ? closeInlineSearch() : openInlineSearch()"
-        >🔍</button>
-        <button type="button" class="btn-create" :disabled="store.submitting" @click="openCreate">+ 新建闪记</button>
+          aria-label="搜索"
+          title="搜索"
+        >
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="10.8" cy="10.8" r="6.2" />
+            <path d="M15.4 15.4L20 20" />
+          </svg>
+        </button>
+        <button type="button" class="btn-create" :disabled="store.submitting" aria-label="新建闪记" title="新建闪记" @click="openCreate">+</button>
       </div>
     </div>
 
@@ -683,7 +689,12 @@ void currentUserId
       :aria-label="'快速捕获'"
       :title="'快速捕获：文字 / 图片 / 视频 / 文件'"
       @click="openFabMenu"
-    >+</button>
+    >
+      <svg class="fab-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5V19" />
+        <path d="M5 12H19" />
+      </svg>
+    </button>
 
     <!-- 菜单复用 MessageActionMenu：发现样式 · ESC / 点空白关闭 -->
     <MessageActionMenu
@@ -750,33 +761,54 @@ void currentUserId
   align-items: center;
   gap: 8px;
 }
-.page-stats {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+.page-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
 }
 .btn-search-toggle {
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 .btn-search-toggle.active {
-  border-color: var(--color-primary);
   color: var(--color-primary);
 }
+.toolbar-icon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .btn-create {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: #ffffff;
-  font-size: 14px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 .btn-create:hover:not(:disabled) {
-  background: var(--color-primary-dark);
+  color: var(--color-primary);
 }
 .btn-create:disabled {
   opacity: 0.6;
@@ -998,12 +1030,13 @@ void currentUserId
   bottom: 24px;
   width: 56px;
   height: 56px;
-  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
   border: none;
   background: var(--color-primary);
   color: #ffffff;
-  font-size: 30px;
-  line-height: 1;
   cursor: pointer;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
   z-index: 50;
@@ -1023,6 +1056,14 @@ void currentUserId
 .fab.mobile {
   /* 移动端避开底部 tab bar（8 + 56 = 64） */
   bottom: 80px;
+}
+.fab-icon {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
 }
 .hidden-file {
   display: none;

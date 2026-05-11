@@ -57,10 +57,6 @@ function goBack() {
         <h2 class="card-title">通用</h2>
       </header>
       <ul class="kv-list">
-        <li class="link-row" @click="router.push({ name: 'change-password' })">
-          <span class="kv-label">修改密码</span>
-          <span class="chevron">›</span>
-        </li>
         <li class="link-row" @click="router.push({ name: 'settings-about' })">
           <span class="kv-label">关于 Thunder Note</span>
           <span class="chevron">›</span>

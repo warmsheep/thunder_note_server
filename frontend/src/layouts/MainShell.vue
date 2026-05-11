@@ -1,22 +1,44 @@
 <script>
 // D1-W26-01 主导航数据源：与 Android `menu_bottom_tabs.xml` 顺序对齐
-// 闪记 / 合集 / 联系人 / 收藏 / 搜索 / 我的（搜索为 Web 额外项）
+// 闪记 / 合集 / 联系人 / 收藏 / 我的
 // 暴露为 normal script 便于测试与外部引用（script setup 不允许 export）
 export function buildNavItems(pendingCount = 0) {
   const safeCount = Number.isFinite(Number(pendingCount)) ? Math.max(0, Math.floor(Number(pendingCount))) : 0
   return [
-    { name: 'notes', label: '闪记', icon: '⚡', to: '/notes' },
-    { name: 'collections', label: '合集', icon: '📂', to: '/collections' },
+    { name: 'notes', label: '闪记', icon: 'flashnote', to: '/notes' },
+    { name: 'collections', label: '合集', icon: 'collection', to: '/collections' },
     {
       name: 'contacts',
       label: '联系人',
-      icon: '👥',
+      icon: 'contact',
       to: '/contacts',
       badge: safeCount > 0 ? safeCount : 0
     },
-    { name: 'favorites', label: '收藏', icon: '⭐', to: '/favorites' },
-    { name: 'search', label: '搜索', icon: '🔍', to: '/search' },
-    { name: 'profile', label: '我的', icon: '👤', to: '/profile' }
+    { name: 'favorites', label: '收藏', icon: 'favorite', to: '/favorites' },
+    { name: 'profile', label: '我的', icon: 'profile', to: '/profile' }
+  ]
+}
+
+export const NAV_ICON_PATHS = {
+  flashnote: [
+    'M13 2L4.5 13H11L9 22L19.5 9H13L13 2Z'
+  ],
+  collection: [
+    'M3 6.5H9L11 8.5H21V18.5C21 19.6 20.1 20.5 19 20.5H5C3.9 20.5 3 19.6 3 18.5V6.5Z',
+    'M3 6.5V5.5C3 4.4 3.9 3.5 5 3.5H9L11 5.5H19C20.1 5.5 21 6.4 21 7.5V8.5'
+  ],
+  contact: [
+    'M16 11C18.21 11 20 9.21 20 7C20 4.79 18.21 3 16 3C13.79 3 12 4.79 12 7C12 9.21 13.79 11 16 11Z',
+    'M8 12C10.21 12 12 10.21 12 8C12 5.79 10.21 4 8 4C5.79 4 4 5.79 4 8C4 10.21 5.79 12 8 12Z',
+    'M2.5 21C3.3 17.6 5.3 15.5 8 15.5C10.7 15.5 12.7 17.6 13.5 21',
+    'M13.5 14.5C16.8 14.5 19.2 16.8 20 21'
+  ],
+  favorite: [
+    'M12 20.5L10.7 19.3C6.1 15.1 3 12.3 3 8.85C3 6.05 5.2 3.85 8 3.85C9.6 3.85 11.1 4.6 12 5.75C12.9 4.6 14.4 3.85 16 3.85C18.8 3.85 21 6.05 21 8.85C21 12.3 17.9 15.1 13.3 19.3L12 20.5Z'
+  ],
+  profile: [
+    'M12 12C14.49 12 16.5 9.99 16.5 7.5C16.5 5.01 14.49 3 12 3C9.51 3 7.5 5.01 7.5 7.5C7.5 9.99 9.51 12 12 12Z',
+    'M4.5 21C5.4 16.9 8.2 14.5 12 14.5C15.8 14.5 18.6 16.9 19.5 21'
   ]
 }
 </script>
@@ -32,7 +54,7 @@ import { useToast } from '../composables/useToast'
 // 桌面：左侧栏 + 内容区；移动：顶栏 + 内容 + 底部 tab
 //
 // D1-W26-01 联系人提升为顶级导航项（与 Android `tab_contact` 对齐），
-// 共 6 项：闪记 / 合集 / 联系人 / 收藏 / 搜索 / 我的。
+// 共 5 项：闪记 / 合集 / 联系人 / 收藏 / 我的。
 // 桌面 sidebar 与移动 bottombar 共用同一份 `navItems` 数据源。
 // 联系人项右侧带红点 / 数字徽标（来自 contactsStore.pendingCount）。
 // 用户菜单中的「联系人」入口保留作为快捷路径，避免老用户找不到。
@@ -66,6 +88,7 @@ function closeUserMenu() {
 // D1-W26-01 联系人提升为顶级导航项；buildNavItems 是 normal script 中导出的纯工厂，
 // 这里包成 computed 让 contactsStore.pendingCount 变更触发 badge 重渲染
 const navItems = computed(() => buildNavItems(contactsStore.pendingCount))
+const navIconPaths = NAV_ICON_PATHS
 
 const currentTitle = computed(() => {
   const matched = navItems.value.find((item) => route.path.startsWith(item.to))
@@ -101,7 +124,15 @@ async function handleLogout() {
           class="sidebar-link"
           active-class="sidebar-link-active"
         >
-          <span class="sidebar-icon" aria-hidden="true">{{ item.icon }}</span>
+          <span class="sidebar-icon" aria-hidden="true">
+            <svg class="nav-svg" viewBox="0 0 24 24" focusable="false">
+              <path
+                v-for="path in navIconPaths[item.icon]"
+                :key="path"
+                :d="path"
+              />
+            </svg>
+          </span>
           <span class="sidebar-label">{{ item.label }}</span>
           <!-- D1-W26-01 联系人项 pendingCount 红点徽标 -->
           <span
@@ -170,7 +201,15 @@ async function handleLogout() {
         active-class="bottom-link-active"
       >
         <span class="bottom-icon-wrap">
-          <span class="bottom-icon" aria-hidden="true">{{ item.icon }}</span>
+          <span class="bottom-icon" aria-hidden="true">
+            <svg class="nav-svg" viewBox="0 0 24 24" focusable="false">
+              <path
+                v-for="path in navIconPaths[item.icon]"
+                :key="path"
+                :d="path"
+              />
+            </svg>
+          </span>
           <!-- D1-W26-01 移动端 bottombar 联系人项徽标 -->
           <span
             v-if="item.badge"
@@ -271,8 +310,21 @@ async function handleLogout() {
   font-weight: 500;
 }
 .sidebar-icon {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
+  height: 24px;
+  color: currentColor;
+}
+.nav-svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   text-align: center;
 }
 .sidebar-link {
@@ -493,7 +545,11 @@ async function handleLogout() {
     display: inline-flex;
   }
   .bottom-icon {
-    font-size: 20px;
+    display: inline-flex;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
   }
   /* D1-W26-01 bottombar 徽标：右上角红色圆点（数字版 / 红点版自动选） */
   .bottom-badge {
@@ -538,7 +594,12 @@ async function handleLogout() {
     font-size: 10px;
   }
   .bottom-icon {
-    font-size: 18px;
+    width: 22px;
+    height: 22px;
+  }
+  .bottom-icon .nav-svg {
+    width: 21px;
+    height: 21px;
   }
 }
 </style>
