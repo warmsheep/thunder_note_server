@@ -1,9 +1,14 @@
-// D1-W11 头像 URL 工具
+// D1-W11 / D1-W28-17 头像字段工具
 //
-// 当前后端 file controller 上传只返回 objectName（MinIO 内部路径），
-// 而 PUT /api/users/avatar 又强制 @URL 校验 avatar 字段必须是绝对 URL。
-// 这里把 objectName 包进 `${origin}/api/files/download?objectName=...` 形式，
-// 既能通过 @URL 校验，又能反解出 objectName 给浏览器走鉴权 fetch+blob 预览。
+// 后端 user.avatar 字段现在统一存"相对资源标识"，支持四种形态：
+//   1. emoji / 短字符串（如 '💼'）
+//   2. objectName（如 '1/abc.png'，含 '/' 的相对路径）
+//   3. 完整闪记下载 URL（历史遗留：`http(s)://host/api/files/download?objectName=...`）
+//      W28-17 之后后端入库时会自动归一化为 #2 objectName，但既有数据 / 老版本客户端
+//      仍可能写入这种形态，前端需要兼容。
+//   4. 外链 URL（CDN / 其他图床）
+// 本模块只做"形态识别 + objectName 抽取"，不再负责把 objectName 拼成绝对 URL；
+// 客户端各自用本机访问的 origin 拼接，避免多域名 / 自托管部署下 host 错配。
 
 const DOWNLOAD_PATH = '/api/files/download'
 
@@ -13,12 +18,6 @@ function safeOrigin(origin) {
     return window.location.origin
   }
   return 'http://localhost:8080'
-}
-
-export function buildAvatarUrl(objectName, origin) {
-  if (!objectName) return ''
-  const base = safeOrigin(origin)
-  return `${base}${DOWNLOAD_PATH}?objectName=${encodeURIComponent(objectName)}`
 }
 
 // D1-W23-01 判断 avatar 是不是 emoji / 单字符短串（不是 URL 也不是对象名）

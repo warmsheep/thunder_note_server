@@ -243,8 +243,9 @@ class UserServiceImplTest {
         verify(userMapper).updateById(user);
     }
 
+    // D1-W28-17 入库归一化：绝对下载 URL 被抽成 objectName 入库
     @Test
-    void updateAvatar_acceptsAbsoluteUrl() {
+    void updateAvatar_normalizesInternalDownloadUrlToObjectName() {
         UserMapper userMapper = mock(UserMapper.class);
         CurrentUserService currentUserService = mock(CurrentUserService.class);
         User user = new User();
@@ -256,9 +257,70 @@ class UserServiceImplTest {
                 userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
                 mock(MessageMapper.class), currentUserService);
 
-        String url = "http://h/api/files/download?objectName=1/abc.jpg";
-        service.updateAvatar("alice", url);
-        assertEquals(url, user.getAvatar());
+        String url = "http://localhost:8080/api/files/download?objectName=1%2Fabc.jpg";
+        String result = service.updateAvatar("alice", url);
+        assertEquals("1/abc.jpg", result);
+        assertEquals("1/abc.jpg", user.getAvatar());
+    }
+
+    // 多 host 同一 objectName 入库结果一致（多域名 / 反代部署友好）
+    @Test
+    void updateAvatar_normalizesDifferentHostsToSameObjectName() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(currentUserService.getRequiredUser("alice")).thenReturn(user);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        service.updateAvatar("alice", "http://192.168.0.223:8080/api/files/download?objectName=1/abc.jpg");
+        assertEquals("1/abc.jpg", user.getAvatar());
+
+        service.updateAvatar("alice", "https://flashnote.example.com/api/files/download?objectName=1/abc.jpg");
+        assertEquals("1/abc.jpg", user.getAvatar());
+    }
+
+    // 纯 objectName 直接保留
+    @Test
+    void updateAvatar_acceptsRawObjectName() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(currentUserService.getRequiredUser("alice")).thenReturn(user);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        String result = service.updateAvatar("alice", "1/avatar-abc.jpg");
+        assertEquals("1/avatar-abc.jpg", result);
+        assertEquals("1/avatar-abc.jpg", user.getAvatar());
+    }
+
+    // 外链 URL（非闪记 download path）原样保留：支持自定义 CDN 头像
+    @Test
+    void updateAvatar_preservesExternalCdnUrl() {
+        UserMapper userMapper = mock(UserMapper.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        when(currentUserService.getRequiredUser("alice")).thenReturn(user);
+
+        UserServiceImpl service = new UserServiceImpl(
+                userMapper, mock(UserProfileMapper.class), mock(FriendRelationMapper.class),
+                mock(MessageMapper.class), currentUserService);
+
+        String cdn = "https://cdn.example.com/avatars/me.png";
+        String result = service.updateAvatar("alice", cdn);
+        assertEquals(cdn, result);
+        assertEquals(cdn, user.getAvatar());
     }
 
     @Test

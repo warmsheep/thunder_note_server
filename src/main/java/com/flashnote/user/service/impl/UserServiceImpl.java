@@ -89,9 +89,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public String updateAvatar(String username, String avatarUrl) {
-        // D1-W23-01 放宽 DTO 后，这里补业务校验：
-        //   - 必须非空（DTO 已 @NotBlank 兜底一次）
-        //   - 允许两种形态：绝对 URL（http/https） 或 纯 emoji/短字符串（长度 ≤ 16，不含控制字符 / 引号 / 尖括号，避免 XSS）
+        // D1-W28-17 归一化入库：服务端可能多域名 / 反代部署，存绝对 URL 会让 host 跨设备失效，
+        // 所以入库前把绝对下载链接抽成 objectName，只存"相对资源标识"。
+        // 允许形态（入库版本）：
+        //   1. objectName（如 "1/abc.png"，含 '/' 的相对资源路径）
+        //   2. emoji / 短字符串（≤ 16，无控制字符 / 引号 / 尖括号）
+        //   3. 外链头像 URL（http/https 但不是 /api/files/download 形式 — 比如用户填 CDN）
+        // 入参 avatarUrl 兼容历史调用：绝对下载 URL → 自动抽 objectName。
         if (avatarUrl == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is required");
         }
@@ -99,24 +103,83 @@ public class UserServiceImpl implements UserService {
         if (trimmed.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is required");
         }
-        boolean isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://");
-        if (!isUrl) {
-            // 非 URL 场景：作为 emoji / 短字符串；长度与字符白名单严格收紧
-            if (trimmed.length() > 16) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is too long");
-            }
-            for (int i = 0; i < trimmed.length(); i++) {
-                char c = trimmed.charAt(i);
-                if (c < 0x20 || c == '"' || c == '\'' || c == '<' || c == '>' || c == '/') {
-                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar contains invalid characters");
-                }
-            }
-        }
+        String normalized = normalizeAvatar(trimmed);
 
         User user = getRequiredUser(username);
-        user.setAvatar(trimmed);
+        user.setAvatar(normalized);
         userMapper.updateById(user);
-        return avatarUrl;
+        return normalized;
+    }
+
+    /**
+     * 把传入的 avatar 字段归一化为最适合入库的形式：
+     *   - 闪记内部下载 URL (`http(s)://*\/api/files/download?objectName=...`) → 抽出 objectName
+     *   - 外链 URL → 原样保留（限长 ≤ 512 与表字段一致）
+     *   - 纯 objectName / emoji → 字符白名单校验后保留
+     * 抛 BusinessException 时表示 400 用户输入错误。
+     */
+    static String normalizeAvatar(String trimmed) {
+        boolean isHttpUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+        if (isHttpUrl) {
+            String objectName = extractObjectNameFromDownloadUrl(trimmed);
+            if (objectName != null && !objectName.isEmpty()) {
+                if (objectName.length() > 512) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar objectName too long");
+                }
+                return objectName;
+            }
+            // 外链头像（CDN / 第三方）保留原样
+            if (trimmed.length() > 512) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar URL too long");
+            }
+            return trimmed;
+        }
+        // emoji / 短字符串 / objectName 共用一套白名单
+        if (trimmed.length() > 512) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is too long");
+        }
+        boolean hasSlash = trimmed.indexOf('/') >= 0;
+        if (!hasSlash && trimmed.length() > 16) {
+            // 非 objectName 形态当作 emoji / 短串，长度严格收紧避免被滥用为长文本
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar is too long");
+        }
+        for (int i = 0; i < trimmed.length(); i++) {
+            char c = trimmed.charAt(i);
+            if (c < 0x20 || c == '"' || c == '\'' || c == '<' || c == '>') {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Avatar contains invalid characters");
+            }
+        }
+        return trimmed;
+    }
+
+    /**
+     * 从形如 `http(s)://host[:port]/api/files/download?objectName=...` 的 URL 中抽出 objectName。
+     * 失败 / 不是闪记下载链接时返回 null。
+     */
+    static String extractObjectNameFromDownloadUrl(String httpUrl) {
+        try {
+            java.net.URI uri = java.net.URI.create(httpUrl);
+            if (!"/api/files/download".equals(uri.getPath())) {
+                return null;
+            }
+            String query = uri.getRawQuery();
+            if (query == null || query.isEmpty()) {
+                return null;
+            }
+            for (String pair : query.split("&")) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) {
+                    continue;
+                }
+                String key = pair.substring(0, eq);
+                if ("objectName".equals(key)) {
+                    return java.net.URLDecoder.decode(pair.substring(eq + 1), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override

@@ -9,7 +9,6 @@ import { useFavoritesStore } from '../stores/favorites'
 import { useToast } from '../composables/useToast'
 import { uploadFile } from '../api/files'
 import { countMessages } from '../api/messages'
-import { buildAvatarUrl } from '../utils/avatarHelpers'
 import LoadingState from '../components/LoadingState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import AuthenticatedAvatar from '../components/AuthenticatedAvatar.vue'
@@ -185,9 +184,11 @@ async function onCropConfirm(blob) {
     if (!objectName) {
       throw new Error('上传未返回有效结果')
     }
-    const avatarUrl = buildAvatarUrl(objectName)
-    await profileStore.saveAvatar(avatarUrl)
-    authStore.patchUser({ avatar: avatarUrl })
+    // D1-W28-17 直接保存 objectName（相对资源标识），不再拼 origin。
+    // 后端会原样存 objectName，客户端各自拼自己的 baseUrl。
+    // AuthenticatedAvatar 已经能直接消费 objectName（走 fetchAsObjectUrl 鉴权拉 blob）。
+    await profileStore.saveAvatar(objectName)
+    authStore.patchUser({ avatar: objectName })
     showSuccess('头像已更新')
   } catch (err) {
     showError(err?.serverMessage || err?.message || '头像上传失败')

@@ -1,28 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildAvatarUrl,
   extractObjectName,
   needsAuthenticatedFetch,
   isEmojiAvatar
 } from './avatarHelpers'
-
-describe('buildAvatarUrl', () => {
-  it('returns empty string for falsy objectName', () => {
-    expect(buildAvatarUrl('')).toBe('')
-    expect(buildAvatarUrl(null)).toBe('')
-  })
-
-  it('packs objectName into download URL with explicit origin', () => {
-    expect(buildAvatarUrl('u1/abc.png', 'http://example.com')).toBe(
-      'http://example.com/api/files/download?objectName=u1%2Fabc.png'
-    )
-  })
-
-  it('uses window.location.origin when origin not provided', () => {
-    const url = buildAvatarUrl('u1/abc.png')
-    expect(url.endsWith('/api/files/download?objectName=u1%2Fabc.png')).toBe(true)
-  })
-})
 
 describe('extractObjectName', () => {
   it('returns null for empty input', () => {
