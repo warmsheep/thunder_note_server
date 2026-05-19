@@ -46,7 +46,10 @@ const m = computed(() => props.message || {})
 const status = computed(() => m.value.__status || 'sent')
 
 const isCard = computed(() => Boolean(m.value.payload && m.value.payload.cardType))
-const isMedia = computed(() => Boolean(m.value.mediaType) && !isCard.value)
+const isMedia = computed(() => {
+  const type = m.value.mediaType == null ? '' : String(m.value.mediaType).trim().toUpperCase()
+  return Boolean(type) && type !== 'TEXT' && !isCard.value
+})
 
 // D1-W25-01 / W25-04 卡片气泡内的 items / 文件列表 / 智能 summary
 const cardItems = computed(() => {
