@@ -1,7 +1,6 @@
 package com.flashnote.common.web;
 
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
@@ -26,16 +25,17 @@ import java.io.IOException;
 public class WebStaticResourceConfig implements WebMvcConfigurer {
 
     private static final String WEB_BASE_LOCATION = "classpath:/static/web/";
-    private static final String WEB_INDEX_LOCATION = "/static/web/index.html";
+    private static final String WEB_DEV_LOCATION = "file:src/main/resources/static/web/";
+    private static final String WEB_INDEX_RESOURCE = "index.html";
 
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         // 把 / 暴露为 SPA 根：先尝试真实静态资源，再 fallback 到 index.html。
         // 排除 api/、actuator/、error 等保留前缀，避免 SPA 吞掉这些应该走 controller / 错误处理的路径。
         registry.addResourceHandler("/**")
-                .addResourceLocations(WEB_BASE_LOCATION)
+                .addResourceLocations(WEB_BASE_LOCATION, WEB_DEV_LOCATION)
                 .resourceChain(true)
-                .addResolver(new SpaFallbackResolver(WEB_INDEX_LOCATION));
+                .addResolver(new SpaFallbackResolver(WEB_INDEX_RESOURCE));
     }
 
     @Override
@@ -71,11 +71,7 @@ public class WebStaticResourceConfig implements WebMvcConfigurer {
                 return null;
             }
             // 其他路径视为 SPA 内部路由，fallback 到 index.html，由前端 vue-router 接管。
-            ClassPathResource fallback = new ClassPathResource(fallbackLocation);
-            if (fallback.exists() && fallback.isReadable()) {
-                return fallback;
-            }
-            return null;
+            return super.getResource(fallbackLocation, location);
         }
 
         private static boolean isReservedPath(String resourcePath) {
