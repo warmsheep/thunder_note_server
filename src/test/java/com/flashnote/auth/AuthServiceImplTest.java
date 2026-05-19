@@ -74,7 +74,35 @@ class AuthServiceImplTest {
         assertEquals("access-token", response.getAccessToken());
         assertEquals("refresh-token", response.getRefreshToken());
         assertEquals("Bearer", response.getTokenType());
-        verify(redisUtil).set(anyString(), eq("refresh-token"), anyLong());
+        verify(redisUtil).set(argThat(key -> key.startsWith("auth:refresh:1:")), eq("1"), eq(604800L));
+    }
+
+    @Test
+    void login_multipleSessionsStoresRefreshTokensIndependently() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setEmail("alice@example.com");
+        user.setPassword("encodedPassword");
+        user.setNickname("Alice");
+
+        when(userMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(user);
+        when(passwordEncoder.matches("password123", "encodedPassword")).thenReturn(true);
+        when(jwtUtil.generateAccessToken(1L, "alice")).thenReturn("access-token-1", "access-token-2");
+        when(jwtUtil.generateRefreshToken(1L, "alice")).thenReturn("android-refresh-token", "web-refresh-token");
+        when(jwtUtil.getMaxSessionDurationMillis()).thenReturn(2592000000L);
+        when(jwtUtil.getRefreshExpirationSeconds()).thenReturn(604800L);
+        when(jwtUtil.getAccessExpirationSeconds()).thenReturn(3600L);
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername("alice");
+        request.setPassword("password123");
+
+        authService.login(request);
+        authService.login(request);
+
+        verify(redisUtil, times(2)).set(argThat(key -> key.startsWith("auth:refresh:1:")), eq("1"), eq(604800L));
+        verify(redisUtil, never()).set(eq("auth:refresh:1"), anyString(), anyLong());
     }
 
     @Test
@@ -146,10 +174,10 @@ class AuthServiceImplTest {
 
         when(jwtUtil.validateToken("valid-refresh-token", "refresh")).thenReturn(true);
         when(jwtUtil.getUserId("valid-refresh-token")).thenReturn(1L);
-        when(redisUtil.get(anyString())).thenReturn("valid-refresh-token");
+        when(redisUtil.get(argThat(key -> key != null && key.startsWith("auth:refresh:1:")))).thenReturn("1");
         when(userMapper.selectById(1L)).thenReturn(user);
         when(jwtUtil.generateAccessToken(1L, "alice")).thenReturn("new-access-token");
-        when(redisUtil.get("auth:session:start:1")).thenReturn(String.valueOf(System.currentTimeMillis() - 1000));
+        when(redisUtil.get(argThat(key -> key != null && key.startsWith("auth:refresh:session:1:")))).thenReturn(String.valueOf(System.currentTimeMillis() - 1000));
         when(jwtUtil.getMaxSessionDurationMillis()).thenReturn(2592000000L);
         when(jwtUtil.getRefreshExpirationMillis()).thenReturn(604800000L);
         when(jwtUtil.generateRefreshToken(eq(1L), eq("alice"), anyLong())).thenReturn("new-refresh-token");
@@ -160,6 +188,34 @@ class AuthServiceImplTest {
         assertNotNull(response);
         assertEquals("new-access-token", response.getAccessToken());
         assertEquals("new-refresh-token", response.getRefreshToken());
+    }
+
+    @Test
+    void refreshToken_withLegacySingleSessionKeyMigratesToTokenScopedKey() {
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("alice");
+        user.setEmail("alice@example.com");
+        user.setNickname("Alice");
+
+        when(jwtUtil.validateToken("legacy-refresh-token", "refresh")).thenReturn(true);
+        when(jwtUtil.getUserId("legacy-refresh-token")).thenReturn(1L);
+        when(redisUtil.get(argThat(key -> key != null && key.startsWith("auth:refresh:1:")))).thenReturn(null);
+        when(redisUtil.get(argThat(key -> key != null && key.startsWith("auth:refresh:session:1:")))).thenReturn(null);
+        when(redisUtil.get("auth:refresh:1")).thenReturn("legacy-refresh-token");
+        when(redisUtil.get("auth:session:start:1")).thenReturn(String.valueOf(System.currentTimeMillis() - 1000));
+        when(userMapper.selectById(1L)).thenReturn(user);
+        when(jwtUtil.generateAccessToken(1L, "alice")).thenReturn("new-access-token");
+        when(jwtUtil.getMaxSessionDurationMillis()).thenReturn(2592000000L);
+        when(jwtUtil.getRefreshExpirationMillis()).thenReturn(604800000L);
+        when(jwtUtil.generateRefreshToken(eq(1L), eq("alice"), anyLong())).thenReturn("new-refresh-token");
+        when(jwtUtil.getAccessExpirationSeconds()).thenReturn(3600L);
+
+        LoginResponse response = authService.refreshToken("legacy-refresh-token");
+
+        assertEquals("new-refresh-token", response.getRefreshToken());
+        verify(redisUtil).delete("auth:refresh:1");
+        verify(redisUtil).set(argThat(key -> key.startsWith("auth:refresh:1:")), eq("1"), anyLong());
     }
 
     @Test
@@ -176,7 +232,10 @@ class AuthServiceImplTest {
 
         authService.logout("Bearer valid-access-token");
 
-        verify(redisUtil, times(2)).delete(anyString());
+        verify(redisUtil).deleteByPattern("auth:refresh:1:*");
+        verify(redisUtil).deleteByPattern("auth:refresh:session:1:*");
+        verify(redisUtil).delete("auth:refresh:1");
+        verify(redisUtil).delete("auth:session:start:1");
     }
 
     @Test

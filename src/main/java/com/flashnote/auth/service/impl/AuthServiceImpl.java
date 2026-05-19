@@ -18,10 +18,16 @@ import com.flashnote.common.utils.RedisUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.Base64;
 
 @Service
 public class AuthServiceImpl implements AuthService {
+    private static final String REFRESH_TOKEN_KEY_PREFIX = "auth:refresh:";
+    private static final String REFRESH_TOKEN_SESSION_KEY_PREFIX = "auth:refresh:session:";
     private static final String SESSION_START_KEY_PREFIX = "auth:session:start:";
 
     private final UserMapper userMapper;
@@ -52,8 +58,8 @@ public class AuthServiceImpl implements AuthService {
         long sessionStartMillis = System.currentTimeMillis();
         long refreshTtlSeconds = Math.max(1L, jwtUtil.getRefreshExpirationSeconds());
         String refreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername());
-        redisUtil.set(buildRefreshTokenKey(user.getId()), refreshToken, refreshTtlSeconds);
-        redisUtil.set(buildSessionStartKey(user.getId()), String.valueOf(sessionStartMillis), jwtUtil.getMaxSessionDurationMillis() / 1000);
+        redisUtil.set(buildRefreshTokenKey(user.getId(), refreshToken), String.valueOf(user.getId()), refreshTtlSeconds);
+        redisUtil.set(buildTokenSessionStartKey(user.getId(), refreshToken), String.valueOf(sessionStartMillis), jwtUtil.getMaxSessionDurationMillis() / 1000);
 
         UserInfo userInfo = new UserInfo(
                 user.getId(),
@@ -97,8 +103,10 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid refresh token");
         }
 
-        String cachedToken = redisUtil.get(buildRefreshTokenKey(userId));
-        if (cachedToken == null || !cachedToken.equals(refreshToken)) {
+        String refreshTokenKey = buildRefreshTokenKey(userId, refreshToken);
+        String cachedTokenUserId = redisUtil.get(refreshTokenKey);
+        String legacyCachedToken = cachedTokenUserId == null ? redisUtil.get(buildLegacyRefreshTokenKey(userId)) : null;
+        if (cachedTokenUserId == null && (legacyCachedToken == null || !legacyCachedToken.equals(refreshToken))) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Refresh token has expired");
         }
 
@@ -107,8 +115,8 @@ public class AuthServiceImpl implements AuthService {
         long elapsed = Math.max(0L, now - sessionStartMillis);
         long maxDuration = jwtUtil.getMaxSessionDurationMillis();
         if (elapsed >= maxDuration) {
-            redisUtil.delete(buildRefreshTokenKey(userId));
-            redisUtil.delete(buildSessionStartKey(userId));
+            redisUtil.delete(refreshTokenKey);
+            redisUtil.delete(buildTokenSessionStartKey(userId, refreshToken));
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Session expired, please login again");
         }
 
@@ -122,8 +130,13 @@ public class AuthServiceImpl implements AuthService {
         long refreshTtlMillis = Math.max(1L, Math.min(jwtUtil.getRefreshExpirationMillis(), remainingMillis));
         long refreshTtlSeconds = Math.max(1L, refreshTtlMillis / 1000);
         String newRefreshToken = jwtUtil.generateRefreshToken(user.getId(), user.getUsername(), refreshTtlMillis);
-        redisUtil.set(buildRefreshTokenKey(userId), newRefreshToken, refreshTtlSeconds);
-        redisUtil.set(buildSessionStartKey(userId), String.valueOf(sessionStartMillis), Math.max(1L, (maxDuration - elapsed) / 1000));
+        redisUtil.delete(refreshTokenKey);
+        if (legacyCachedToken != null) {
+            redisUtil.delete(buildLegacyRefreshTokenKey(userId));
+        }
+        redisUtil.delete(buildTokenSessionStartKey(userId, refreshToken));
+        redisUtil.set(buildRefreshTokenKey(userId, newRefreshToken), String.valueOf(userId), refreshTtlSeconds);
+        redisUtil.set(buildTokenSessionStartKey(userId, newRefreshToken), String.valueOf(sessionStartMillis), Math.max(1L, (maxDuration - elapsed) / 1000));
 
         UserInfo userInfo = new UserInfo(
                 user.getId(),
@@ -149,7 +162,9 @@ public class AuthServiceImpl implements AuthService {
 
         Long userId = jwtUtil.getUserId(token);
         if (userId != null) {
-            redisUtil.delete(buildRefreshTokenKey(userId));
+            redisUtil.deleteByPattern(REFRESH_TOKEN_KEY_PREFIX + userId + ":*");
+            redisUtil.deleteByPattern(REFRESH_TOKEN_SESSION_KEY_PREFIX + userId + ":*");
+            redisUtil.delete(buildLegacyRefreshTokenKey(userId));
             redisUtil.delete(buildSessionStartKey(userId));
         }
     }
@@ -193,8 +208,16 @@ public class AuthServiceImpl implements AuthService {
         userMapper.updateById(user);
     }
 
-    private String buildRefreshTokenKey(Long userId) {
-        return "auth:refresh:" + userId;
+    private String buildRefreshTokenKey(Long userId, String refreshToken) {
+        return REFRESH_TOKEN_KEY_PREFIX + userId + ":" + fingerprintToken(refreshToken);
+    }
+
+    private String buildLegacyRefreshTokenKey(Long userId) {
+        return REFRESH_TOKEN_KEY_PREFIX + userId;
+    }
+
+    private String buildTokenSessionStartKey(Long userId, String refreshToken) {
+        return REFRESH_TOKEN_SESSION_KEY_PREFIX + userId + ":" + fingerprintToken(refreshToken);
     }
 
     private String buildSessionStartKey(Long userId) {
@@ -211,6 +234,16 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private long resolveSessionStartMillis(Long userId, String refreshToken) {
+        String tokenStart = redisUtil.get(buildTokenSessionStartKey(userId, refreshToken));
+        if (tokenStart != null) {
+            try {
+                long parsed = Long.parseLong(tokenStart);
+                if (parsed > 0L) {
+                    return parsed;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
         String cachedStart = redisUtil.get(buildSessionStartKey(userId));
         if (cachedStart != null) {
             try {
@@ -223,5 +256,15 @@ public class AuthServiceImpl implements AuthService {
         }
         long issuedAt = jwtUtil.getIssuedAtMillis(refreshToken);
         return issuedAt > 0L ? issuedAt : System.currentTimeMillis();
+    }
+
+    private String fingerprintToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", exception);
+        }
     }
 }

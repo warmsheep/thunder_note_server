@@ -1,8 +1,12 @@
 package com.flashnote.common.utils;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -23,6 +27,19 @@ public class RedisUtil {
 
     public void delete(String key) {
         stringRedisTemplate.delete(key);
+    }
+
+    public void deleteByPattern(String pattern) {
+        List<String> keys = new ArrayList<>();
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(1000).build();
+        try (Cursor<String> cursor = stringRedisTemplate.scan(options)) {
+            while (cursor.hasNext()) {
+                keys.add(cursor.next());
+            }
+        }
+        if (!keys.isEmpty()) {
+            stringRedisTemplate.delete(keys);
+        }
     }
 
     public boolean hasKey(String key) {
