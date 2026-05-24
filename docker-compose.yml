@@ -85,7 +85,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
-      SERVER_PORT: ${SERVER_PORT:-8080}
+      SERVER_PORT: 8080
       NOTE_DB_HOST: postgres
       NOTE_DB_PORT: 5432
       NOTE_DB_NAME: ${POSTGRES_DB:-thunder_note}
@@ -102,7 +102,7 @@ services:
       NOTE_CORS_ORIGINS: ${NOTE_CORS_ORIGINS:-http://localhost:*}
       NOTE_LOG_LEVEL: ${NOTE_LOG_LEVEL:-debug}
     ports:
-      - "${SERVER_PORT:-8080}:8080"
+      - "${SERVER_HOST_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 10s

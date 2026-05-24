@@ -152,11 +152,13 @@ cp .env.docker.example .env
 
 如果本机端口已被占用，也可以在 `.env` 里调整：
 
-- `SERVER_PORT`
+- `SERVER_HOST_PORT`
 - `POSTGRES_HOST_PORT`
 - `REDIS_HOST_PORT`
 - `MINIO_API_HOST_PORT`
 - `MINIO_CONSOLE_HOST_PORT`
+
+在 Docker Compose 部署中，`SERVER_HOST_PORT` 表示宿主机对外暴露端口；后端容器内 Spring Boot 固定监听 `8080`。不要通过 `.env` 配置 `SERVER_PORT` 来修改对外端口。
 
 #### 1. 启动完整环境
 
@@ -192,6 +194,12 @@ docker compose ps
 
 ```bash
 curl http://localhost:8080/actuator/health
+```
+
+如果 `.env` 中配置了 `SERVER_HOST_PORT=28080`，验证地址应改为：
+
+```bash
+curl http://localhost:28080/actuator/health
 ```
 
 #### 4. 停止环境
